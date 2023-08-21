@@ -1755,12 +1755,8 @@ class DataAccess_lite(DataAccess):
     """Access to liteServer parameters through liteAccess.Access"""
     def info(self):
         if not self.access:
-            try:
-                from liteserver import liteAccess
-            except:
-                printe(f'The github module liteserver is not available, trying to import local module liteserv')
-                from liteserv import liteAccess 
-            lAccess = liteAccess.Access
+            import liteaccess
+            lAccess = liteaccess.Access
             lAccess.Dbg = pargs.dbg
             self.access = lAccess
         if lAccess.__version__ < '2.0.0':
