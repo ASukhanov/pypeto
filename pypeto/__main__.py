@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from ADO, EPICS or liteServers"""
-__version__= 'v0.4.0 2023-05-10'#
+__version__= 'v0.4.1 2023-08-21'# fixed: liteaccess.info now does not supply value
 
 import os, threading, subprocess, sys, time, math, argparse
 from timeit import default_timer as timer
@@ -1764,7 +1764,12 @@ class DataAccess_lite(DataAccess):
             sys.exit(1)
         self.namespace = 'LITE'
         info = self.access.info(self.devPar)
-        printv(croppedText(f'LITE info({self.devPar}):{info}'))
+        if self.devPar[1] != '*':
+            # add 'value' to info
+            vdict = self.access.get(self.devPar)
+            v = vdict[self.devPar]['value']
+            info[self.devPar[1]]['value'] = v
+        printv(croppedText(f'LITE info({self.devPar}):{info}',300))
         #r = info[self.devPar[0]] if self.devPar[1] == '*'\
         #    else info[self.devPar[0]][self.devPar[1]]
         r = info if self.devPar[1] == '*' else info[self.devPar[1]]
@@ -1944,12 +1949,11 @@ class Spreadsheet():
 
                     # do not request configuration parameters
                     try:
-                        #printv(f"features:{obj.attr['features']}")
+                        #printv(f"obj.attr:{obj.attr}")
                         if 'C' in obj.attr['features']:
                             printi(f'Not requested config parameter {dev,par}')
                             continue
-                        if obj.attr['value'] is None:
-                            #printv(f'Not requested None parameter {dev,par}')
+                        if obj.attr.get('value') is None:
                             continue
                     except Exception as e:
                         printw(f'exception: {e}')
