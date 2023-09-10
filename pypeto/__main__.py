@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Spreadsheet view of process variables from ADO, EPICS or liteServers"""
-__version__= 'v0.4.1 2023-08-21'# fixed: liteaccess.info now does not supply value
+"""Spreadsheet view of process variables from EPICS or liteServers"""
+__version__= 'v0.6.4 2023-08-23'#
 
 import os, threading, subprocess, sys, time, math, argparse
 from timeit import default_timer as timer
@@ -18,6 +18,7 @@ os_environ["OMP_NUM_THREADS"] = "1"
 
 #``````````````````Globals````````````````````````````````````````````````````
 AppName = 'pipeto'
+DefaultNamespace = 'EPICS'
 WWW_wiki = ''
 WWW_help = ''
 rootDirectory = '/operations/app_store/pypet/'
@@ -41,10 +42,15 @@ ButtonStyleSheet = ''
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #````````````````````````````Helper functions`````````````````````````````````
 programStartTime = time.time()
-def printTime(): return time.strftime("%m%d:%H%M%S")
-def printw(msg): print(f'WRN.PP@{printTime()}: '+msg)
-def printe(msg): print(f'ERR.PP@{printTime()}: '+msg)
-def printi(msg): print(f'INF.PP@{printTime()}: '+msg)
+def timeInProgram():
+    return round(time.time() - programStartTime,6)
+def printw(msg): 
+    print(f'WRN.PP@{timeInProgram()}: '+msg)
+    if Win: Win.update_statusBar('WRN:'+msg)
+def printe(msg):
+    print(f'ERR.PP@{timeInProgram()}: '+msg)
+    if Win: Win.update_statusBar('ERR:'+msg)
+def printi(msg): print(f'INF.PP@{timeInProgram()}: '+msg)
 def printv(msg):
     try:
         if pargs.dbg: print(croppedText('PP.DBG:'+str(msg)))
@@ -112,7 +118,7 @@ def select_file_interactively(directory, title='Select a *_pp.py file'):
     #print(f'select_file_interactively:{directory}')
     dialog = QFileDialog()
     dialog.setFileMode( QFileDialog.FileMode() )
-    ffilter = f'{AppName} (*_pp.py)'
+    ffilter = 'pypet (*_pp.py)'
     r = dialog.getOpenFileName( None, title, directory, ffilter)
     relativeName = r[0].replace(directory+'/', '')
     fname = relativeName[:-3]# remove .py
@@ -136,7 +142,7 @@ def pvplot(devPars, plotType=None, dialog=None):
     if dialog:  dialog.accept()
 
 def get_namespace():
-    """Retrieve namespace (ADO, EPICS or LITE from configuation"""
+    """Retrieve namespace (EPICS or LITE from configuation"""
     try:    ns = ConfigModule._Namespace
     except: ns = None
     #printv(f'config namespace: {ns}')
@@ -231,17 +237,16 @@ class QDoubleSpinBoxDAO(SpinBox):
         locked = Process_data_Lock.locked()
         idle = locked or DAM.currentDeliveryMode == 'Stopped'
         #printv(f'data delivery: {DAM.currentDeliveryMode}')
-        printv(f'>do_action {idle,locked,self.dao.name}')
+        printv(f'>do_action {idle,locked,pargs.readonly,self.dao.name}')
         if idle:
             # do not execute set() during initialization.
             return
         widgetValue = self.value()
         if self.integer:
             widgetValue = int(widgetValue)
-        printv(f'>do_action {self.dao.name} {widgetValue}')
-        ok = self.dao.set(widgetValue)
-        if not ok:
-            Win.update_statusBar(f'ERROR setting {self.dao.name}')
+        printv(f'>do_action set {self.dao.name} {widgetValue}')
+        if not self.dao.set(widgetValue):
+            #printw(f'Could not set {self.dao.name} {widgetValue}')
             if isinstance(self.lastValue,(list,tuple)):
                 #printw('DoubleSpinbox value is iterable (lite issue)?)')
                 self.lastValue = self.lastValue[0]
@@ -249,12 +254,17 @@ class QDoubleSpinBoxDAO(SpinBox):
         else:
             self.lastValue = widgetValue        
 
+    def wheelEvent(self, event):
+        event.ignore()
+
 class QComboBoxDAO(QW.QComboBox):
     """ComboBox associated with the Data Access Object""" 
     def __init__(self, dao):
         super().__init__()
         self.setEditable(True)
         self.dao = dao
+        v = self.dao.attr['value']
+        self.lastValue = v
         printv(f'QComboBoxDAO {self.dao.name}')
         #lvs = dao.attr['legalValues'].split(',')
         lvs = dao.attr['legalValues']
@@ -265,19 +275,22 @@ class QComboBoxDAO(QW.QComboBox):
         self.activated[str].connect(self.onComboChanged)
 
     def onComboChanged(self,txt):
-        printv('combo changed '+txt)
-        try:
-            self.dao.set(txt)
-        except Exception as e:
-            printe(f'Setting {self.dao.name} to {txt}: {e}')
+        if self.dao.set(txt):
+            printv('combo changed '+txt)
+            self.lastValue = txt
+        else:
+            self.lineEdit().setText(self.lastValue)
 
     def setText(self,txt):
-        printv(f'combo {self.dao.name} set to {txt}')
+        #print(f'combo {self.dao.name} set to {txt}')
         self.lineEdit().setText(txt)
 
     def contextMenuEvent(self,event):
         #print(f'RightClick at comboBox {self.dao.name}')
         Win.rightClick(self.dao)
+
+    def wheelEvent(self, event):
+        event.ignore()
     
 class QLineEditDAO(QW.QLineEdit):
     """LineEdit associated with the Data Access Object""" 
@@ -429,13 +442,7 @@ class QSliderDAO(QW.QSlider):
             return
         self.lastValue = handlePosition
         value = self.slider2dao(handlePosition)
-        ok = self.dao.set(value)
-        #print(f'set {value}: {ok}')
-        if not ok:
-            Win.update_statusBar(f'ERROR setting {self.dao.name}')
-            # if isinstance(self.lastValue,(list,tuple)):
-                # printw('slider value is iterable (lite issue)?)')
-                # self.lastValue = self.lastValue[0]
+        if not self.dao.set(value):
             self.setValue(self.lastValue)
 
     def setValue(self, v):
@@ -640,7 +647,7 @@ class Window(QW.QMainWindow):
         for i in range(self.table.rowCount()):
             y += self.table.rowHeight(i)+2
         #self.setFixedSize(x, y)
-        print(f'rows {self.table.rowCount(),x,y}')
+        #print(f'rows {self.table.rowCount(),x,y}')
         self.resize(x,y)
 
     def update_statusBar(self,msg):
@@ -1006,16 +1013,14 @@ class Window(QW.QMainWindow):
     def heartBeat(self):
         """Heartbeat task, connected to QT timer. It checks if 
         devices are alive by requesting parName device parameter."""
-        #print('>hb')
         t = time.time()
         if t - self.heartBeatTime < 10.:
             return
         self.heartBeatTime = t
-        #printi('>heartbeat')
+        #print('>heartbeat')
         #TODO: execute info on all devices
         namespace = get_namespace()
-        #printv(f'HB namespace:{namespace}')
-        if namespace is None: namespace = 'ADO'
+        if namespace is None: namespace = DefaultNamespace
         if namespace == 'ADO':
             parName = 'version'
         elif namespace == 'LITE':
@@ -1029,15 +1034,14 @@ class Window(QW.QMainWindow):
 
         for devName,daoDict in daTable.deviceMap.items():
             dao = list(daoDict.values())
-            #printv(f'devName:{devName}')
             firstDevPar = dao[0].devPar
-            #printv(f'devName, devPar: {devName,firstDevPar}')
+            #print(f'devName, devPar: {devName,firstDevPar}')
             try:
                 access = dao[0].access
                 # check if device is alive
                 #TODO: for liteServer we can check time sleepage
                 #ts0 = time.time()
-                #r = access.get((devName,parName), timestamp=False)
+                r = access.get((devName,parName), timestamp=False)
                 #ts1 = time.time()
                 #msg = f'RoundTrip time = {round((ts1-ts0)*1000,2)} ms'
                 #Win.update_statusBar(msg)
@@ -1050,7 +1054,7 @@ class Window(QW.QMainWindow):
                     printw(f'No heartbeat from {devName}: {e}')
                     self.lostConnections.add(devName)
                     self.connectionLost(devName)                        
-        #printi('<heartbeat')
+        #printvv('<heartbeat')
 
     def connectionLost(self,host):
         printw(f'Lost connection to {host}')
@@ -1236,7 +1240,7 @@ class Window(QW.QMainWindow):
             #except Exception as e:
             #    printe(f'in save_snapshot:{e}')
         try:    namespace = ConfigModule._Namespace
-        except: namespace = 'ADO'
+        except: namespace = DefaultNamespace
         content = f"_Namespace = '{namespace}'\n"
         content += f'_Columns = {self.columnAttributes}\n'
         content += '_Rows = [\n'
@@ -1404,7 +1408,7 @@ def MySlot(listOfParNames):
             break
     if DataAccessMonitor.Perf: print('GUI update time: %.4f'%(timer()-ts))    
     #printv(f'<MySlot processed data')
-    if errMsg:  Win.update_statusBar('WARNING: '+errMsg) #Issue, it could be long delay here
+    if errMsg:  Win.update_statusBar('WRN: '+errMsg) #Issue, it could be long delay here
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #````````````````````````````Data provider````````````````````````````````````
 class DAM(QtCore.QThread):
@@ -1522,7 +1526,6 @@ class DAM(QtCore.QThread):
                 devPars = [i.devPar for i in aggregatedDAO]
                 #printv(f'devPars: {devPars}')
                 try:
-                    #TODO: bug in adoAccess if one of the ADO is not responding
                     r = access.get(*devPars)
                     #print(f'got:{r}'[:300])
                 except Exception as e:
@@ -1553,10 +1556,10 @@ class DAM(QtCore.QThread):
         #print(f'got:\n{devDict}')
         da = []
         for hostDevParTuple,parDict in devDict.items():
-            if pargs.dbg: printv(croppedText(f'update GUI objects of {hostDevParTuple,parDict}'))
-            # liteServer returns {'host:dev':{par1:{prop1:{},...},...}},
             if hostDevParTuple == 'ppmuser':
                 continue
+            if pargs.dbg: printv(croppedText(f'update GUI objects of {hostDevParTuple,parDict}'))
+            # liteServer returns {'host:dev':{par1:{prop1:{},...},...}},
 
             def append_da(hostDevPar, valDict):
                 #if pargs.dbg: printv(croppedText(f'par,valDict:{hostDevPar,valDict}'))
@@ -1604,12 +1607,15 @@ class DataAccess():
     def set(self,val):
         """Set value of the DAO"""
         #print(f'>set {self.name} to {type(val)} {val}')
+        if pargs.readonly:
+            printw(f'Cannot set {self.name}: readonly mode') 
+            return False
         try:
             ok = self.access.set(self.name.rsplit(NSDelimiter,1) + [val])
         except Exception as e:
             msg = f'in DataAccess:{e}'
             printw(msg)
-            Win.update_statusBar('WARNING: '+msg)
+            Win.update_statusBar('WRN: '+msg)
             ok = False
         return ok
 
@@ -1665,90 +1671,23 @@ class DataAccess():
         r = 'R' in self.attr['features']
         return r
 
-class DataAccess_ado(DataAccess):
-    """Access to ADO parameters"""
-    def info(self):
-        if not self.access:
-            try:
-                #from cad_io.adoaccess import IORequest
-                from cad_io.adoaccess import IORequest
-            except:
-                printe(f'ADO access not supported')
-                sys.exit(1)
-            self.access = IORequest()
-        self.namespace = 'ADO'
-        ret = {}
-        dev,par = self.name.rsplit(NSDelimiter,1)
-
-        # essential properties:
-        essProps = {'value':'value', 'description':'desc'\
-        , 'legalValues':'legalValues', 'opLow':'opLow', 'opHigh':'opHigh'\
-        , 'engLow':'engLow', 'engHigh':'engHigh'}
-
-        devInfo = self.access.info(dev)
-        if par == '*':
-            return devInfo
-        if len(devInfo) == 0:
-            raise LookupError(f'No such name {dev}')
-        self.props = devInfo[par]
-        #print(f'props:{self.props}')
-        if len(self.props) == 0:
-            printw(f'parameter {dev,par} discarded')
-            sys.exit(0)
-        if self.props['value']['type'] == 'VoidType':
-            val = None
-        else:
-            # do not catch exception here, it will be handled one level up
-            val = self.access.get((dev,par), timestamp=False)
-            val = val[(dev,par)]['value']
-        ret['value'] = val
-        ret['type'] = self.props['value']['type']
-        ret['count'] = self.props['value']['count']
-        ret['features'] = self.props['value']['features']
-        ret['ppmSize'] = self.props['value']['ppmSize']
-        for prop in self.props:
-            #printv(f'adding property for {dev,par}: {prop}')
-            if prop == 'value':
-                continue
-            try:
-                propVal = self.access.get((dev,par,prop), timestamp=False)
-                #print(f'propVal:{propVal}')
-                propVal = propVal[(dev,par)][prop]
-                ret[prop] = propVal
-            except Exception as e:
-                printw(f'Could not get {dev,par,prop}: {e}')
-                continue
-
-        if essProps['engLow'] in ret:
-            ret['engLimits'] = ret.get('engLow'), ret.get('engHigh')
-        if essProps['opLow'] in ret:
-            ret['opLimits'] = ret.get('opLow'), ret.get('opHigh')
-            
-        if 'legalValues' in ret:
-            #printv(f"lv:{ret['legalValues']}")
-            ret['legalValues'] = (ret['legalValues']).split(',')
-            #ret['legalValues'] = (ret['legalValues']).split(',')
-        #if pargs.dbg: printv(croppedText(f'info of {dev,par}:{ret}'))
-        return ret
-
 class DataAccess_epics(DataAccess):
     """Access to EPICS parameters through cad_io.epicsAccess_caproto.epicsAccess"""
     def info(self):
         if not self.access:
-            try:
-                import cad_io.epicsAccess_caproto as epicsAccess
-            except:
-                printe('EPICS access not supported')
-                sys.exit(1)
-            self.access = epicsAccess
+            #import cad_io.epicsAccess_caproto as epicsAccess
+            ##import cad_io_new.epicsAccess_caproto as epicsAccess# for debugging
+            #self.access = epicsAccess
+            from cad_epics import epics
+            self.access = epics
         self.namespace = 'EPICS'
         #devParName = self.name.rsplit(NSDelimiter,1)
         devPar = self.devPar
-        #printv(f'>EPICS info {self.name}')#, access:{self.access}')
+        #print(f'>EPICS info {self.name}, {devPar}')#, access:{self.access}')
         r = self.access.info(devPar)
-        #printv(f'info:{r}')
+        #print(f'info:{r}')
         ret = next(iter(r.values()))
-        #printv(f'ret:{ret}')
+        #print(f'ret:{ret}')
         return ret
 
 class DataAccess_lite(DataAccess):
@@ -1759,8 +1698,8 @@ class DataAccess_lite(DataAccess):
             lAccess = liteaccess.Access
             lAccess.Dbg = pargs.dbg
             self.access = lAccess
-        if lAccess.__version__ < '2.0.0':
-            print(f'liteAccess version should be > 2.0.0, not {lAccess.__version__}')
+        if lAccess.__version__ < '3.0.0':
+            print(f'liteAccess version should be > 3.0.0, not {lAccess.__version__}')
             sys.exit(1)
         self.namespace = 'LITE'
         info = self.access.info(self.devPar)
@@ -1774,6 +1713,11 @@ class DataAccess_lite(DataAccess):
         #    else info[self.devPar[0]][self.devPar[1]]
         r = info if self.devPar[1] == '*' else info[self.devPar[1]]
         return r
+
+class DataAccess_ado(DataAccess):
+    def info(self):
+        printe('DataAccess_ado is not supported by pypeto')
+        sys.exit(1)
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #``````````````````Data access table``````````````````````````````````````````
 class Spreadsheet():
@@ -1820,7 +1764,7 @@ class Spreadsheet():
         def evaluate_string(key):
             # detect if it is a data object, return object and attributes
             rdict = {'obj':key, 'attr':{}}
-            #printv(f'evaluating string:{key}')
+            printv(f'evaluating string:{key}')
             if key == '':
                 return rdict
             prefix = key[:2]
@@ -1833,7 +1777,6 @@ class Spreadsheet():
                     ,'ADO':DataAccess_ado}[ns]
                 except Exception as e:
                     printe(f'Exception in setting namespace. {e}')
-                    #printi(f'DataAccess module: {Access.__module__}, version:{Access.__version__}, daInstance:{DAInstance}')
                     sys.exit(1)                
             else:
                 key = key[2:]
@@ -1949,11 +1892,12 @@ class Spreadsheet():
 
                     # do not request configuration parameters
                     try:
-                        #printv(f"obj.attr:{obj.attr}")
+                        #printv(f"features:{obj.attr['features']}")
                         if 'C' in obj.attr['features']:
                             printi(f'Not requested config parameter {dev,par}')
                             continue
-                        if obj.attr.get('value') is None:
+                        if obj.attr['value'] is None:
+                            #printv(f'Not requested None parameter {dev,par}')
                             continue
                     except Exception as e:
                         printw(f'exception: {e}')
@@ -1986,8 +1930,6 @@ def build_temporary_pvfile(cnsName):
         printe('-EPICS does not support device introspection')
         sys.exit(1)
     elif    ns == 'ADO':
-        #TODO: use info instead of get_meta
-        #cnsInfo = Access.get_meta(cnsName)
         da = DataAccess_ado(cnsName)
         cnsInfo = da.attr
     elif    ns == 'LITE':
@@ -1997,7 +1939,7 @@ def build_temporary_pvfile(cnsName):
         printe(f'Not supported data object access interface: {pargs.access}')
         sys.exit(None)
     if len(cnsInfo) == 0:
-        printe(f'The {cnsName} is not a valid ADO')
+        printe(f'The {cnsName} is not a valid data object')
         sys.exit(None)
     printv(croppedText(f'cnsInfo: {cnsInfo}'))
 
@@ -2025,9 +1967,9 @@ def main():
     global pargs, Win, Access, qApp
     parser = argparse.ArgumentParser(description = __doc__
     ,formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    ,epilog=f'pypeto: {__version__}')
-    parser.add_argument('-a','--access', default='EPICS', help=\
-     'Access to hardware: EPICS/LITE')
+    ,epilog=f'{AppName}: {__version__}')
+    parser.add_argument('-a','--access', default=DefaultNamespace, help=\
+     'Infrastructure', choices=['EPICS', 'LITE'])
     parser.add_argument('-c','--configDir',
      default = ConfigDirectory, help=\
      f'Config directory')
@@ -2037,13 +1979,15 @@ def main():
     parser.add_argument('-g','--geometry', help=\
     'Relative position (x,y) of the window on the screen, e.g. -g0.2,0.5')
     parser.add_argument('-H','--hidemenubar',  action='store_true',  help=\
-      'Hide menuBar and statusBar')
+    'Hide menuBar and statusBar')
     parser.add_argument('-i','--instance', default='', help=\
     'This argument will be available to target pypage as "builtins.pypage_INSTANCE"')
     parser.add_argument('-r','--restore', action='store_true', help=\
-     'restore the parameter setting from a snapshot') 
+    'Restore the parameter setting from a snapshot')
+    parser.add_argument('-R','--readonly', action='store_true', help=\
+    'Read only mode: modification of parameters is prohibited')
     parser.add_argument('-s','--server', action='store_true', help=\
-     'show server variables')
+    'show server variables')
     parser.add_argument('-v', '--verbose', nargs='*', help=\
     'Show more log messages.')
     parser.add_argument('device', nargs='?', help=\
@@ -2113,3 +2057,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
