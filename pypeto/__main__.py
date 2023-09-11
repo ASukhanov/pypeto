@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v0.6.4 2023-08-23'#
+__version__= 'v0.6.3 2023-09-10'# released
 
 import os, threading, subprocess, sys, time, math, argparse
 from timeit import default_timer as timer
@@ -134,7 +134,8 @@ def pvplot(devPars, plotType=None, dialog=None):
     #printi(f'namespace:{ns}, {prefix.get(ns,"")}')
     devPars = [prefix.get(ns,'')+i for i in devPars]
     delimiter = ',' if plotType == 'Correlation' else ' '
-    subprocCmd = ['pvplot', delimiter.join(devPars)]
+    #subprocCmd = ['pvplot', delimiter.join(devPars)]
+    subprocCmd = ['python3', '-m', 'pvplot', delimiter.join(devPars)]
     printi(f'Executing: `{" ".join(subprocCmd)}`')
     # the following does not work as hoovering in menu area clears the statusBar
     #Win.update_statusBar(msg)

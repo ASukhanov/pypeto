@@ -9,17 +9,26 @@ Supported:
  - configuration using python,
  - macro substitution from command line: single configuration file can be used for many similar devices,
  - embedding displays of other programs to a range of cells,
- - plotting of selected cells using pvploto,
+ - plotting of selected cells using pvplot,
  - content-driven cell coloring,
  - snapshots: full page can be saved and the selected cells could be restored from the saved snapshots,
  - slicing of vector parameters.
 
 ## Tests:
 
-Using interactive selection of configurations:
+### Control of the litePeakSimulator
+Start the litePeakSimulator liteserver on localhost if it is not running yet.
+    cd ~/github/liteServer
+    python3 -m liteserver.device.litePeakSimulator -ilo
+
+Connect to litePeakSimulator from pypeto:
+    cd ~/github/pypeto
+    python3 -m pypeto -aLITE localhost:dev1&
+
+Using interactive selection of configurations 
 
     pypeto
 
-Using pypet configuration file:
+Using pypeto configuration file:
 
-    pypet -f tst
+    pypeto -f tst
