@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v0.6.3 2023-09-10'# released
+__version__= 'v0.6.4 2023-09-10'#
+#TODO: separate __main__.py and pypeto.py
 
 import os, threading, subprocess, sys, time, math, argparse
 from timeit import default_timer as timer
@@ -2042,8 +2043,8 @@ def main():
         DataAccessMonitor.setup_dataDelivery('Asynchronous')
 
     # arrange keyboard interrupt to kill the program
-    #import signal
-    #signal.signal(signal.SIGINT, signal.SIG_DFL)
+    import signal
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
     
     #start GUI
     try:
