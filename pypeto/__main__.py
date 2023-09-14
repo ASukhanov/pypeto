@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v0.6.4 2023-09-10'#
+__version__= 'v0.6.5 2023-09-14'# error handling if server times out
 #TODO: separate __main__.py and pypeto.py
 
 import os, threading, subprocess, sys, time, math, argparse
@@ -1704,7 +1704,11 @@ class DataAccess_lite(DataAccess):
             print(f'liteAccess version should be > 3.0.0, not {lAccess.__version__}')
             sys.exit(1)
         self.namespace = 'LITE'
-        info = self.access.info(self.devPar)
+        try:
+            info = self.access.info(self.devPar)
+        except Exception as e:
+            printe(f'exception getting info for {self.devPar}: {e}')
+            sys.exit(1)
         if self.devPar[1] != '*':
             # add 'value' to info
             vdict = self.access.get(self.devPar)
