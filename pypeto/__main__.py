@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v0.6.5 2023-09-14'# error handling if server times out
+__version__= 'v0.6.6 2024-02-27'# QComboBoxDAO: delist lastValue
 #TODO: separate __main__.py and pypeto.py
 
 import os, threading, subprocess, sys, time, math, argparse
@@ -265,7 +265,7 @@ class QComboBoxDAO(QW.QComboBox):
         super().__init__()
         self.setEditable(True)
         self.dao = dao
-        v = self.dao.attr['value']
+        v = self.dao.attr['value'][0]
         self.lastValue = v
         printv(f'QComboBoxDAO {self.dao.name}')
         #lvs = dao.attr['legalValues'].split(',')
@@ -278,9 +278,10 @@ class QComboBoxDAO(QW.QComboBox):
 
     def onComboChanged(self,txt):
         if self.dao.set(txt):
-            printv('combo changed '+txt)
+            printi('combo changed '+txt)
             self.lastValue = txt
         else:
+            printv(f'lastValue: {self.lastValue}')
             self.lineEdit().setText(self.lastValue)
 
     def setText(self,txt):
