@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v0.6.6 2024-02-27'# QComboBoxDAO: delist lastValue
+__version__= 'v0.6.7 2024-07-22'# --verbose.
 #TODO: separate __main__.py and pypeto.py
 
 import os, threading, subprocess, sys, time, math, argparse
-from timeit import default_timer as timer
+timer = time.perf_counter
 from datetime import datetime
 from qtpy import QtWidgets as QW, QtGui, QtCore
 from qtpy.QtWidgets import QApplication, QFileDialog
@@ -18,7 +18,7 @@ from os import system as os_system, environ as os_environ
 os_environ["OMP_NUM_THREADS"] = "1"
 
 #``````````````````Globals````````````````````````````````````````````````````
-AppName = 'pipeto'
+AppName = 'pypeto'
 DefaultNamespace = 'EPICS'
 WWW_wiki = ''
 WWW_help = ''
@@ -54,10 +54,10 @@ def printe(msg):
 def printi(msg): print(f'INF.PP@{timeInProgram()}: '+msg)
 def printv(msg):
     try:
-        if pargs.dbg: print(croppedText('PP.DBG:'+str(msg)))
+        if pargs.verbose: print(croppedText('PP.DBG0:'+str(msg)))
     except: pass
 def printvv(msg):
-        if pargs.dbg > 1: print(croppedText('PP.DDBG:'+str(msg)))
+        if pargs.verbose > 1: print(croppedText('PP.DDB1:'+str(msg)))
 
 def croppedText(txt, limit=200):
     if len(txt) > limit:
@@ -246,9 +246,9 @@ class QDoubleSpinBoxDAO(SpinBox):
         widgetValue = self.value()
         if self.integer:
             widgetValue = int(widgetValue)
-        printv(f'>do_action set {self.dao.name} {widgetValue}')
-        if not self.dao.set(widgetValue):
-            #printw(f'Could not set {self.dao.name} {widgetValue}')
+        r = self.dao.set(widgetValue)
+        if not r:
+            printw(f'Could not set {self.dao.name} {widgetValue}')
             if isinstance(self.lastValue,(list,tuple)):
                 #printw('DoubleSpinbox value is iterable (lite issue)?)')
                 self.lastValue = self.lastValue[0]
@@ -680,7 +680,7 @@ class Window(QW.QMainWindow):
                     self.table.setRowHeight(row,height)
 
             for attribute,value in cellAttribute.items():
-                #if pargs.dbg: #printv(croppedText(f'handle cellAttributes{row,col}:{attribute,value}'))
+                #if pargs.verbose: #printv(croppedText(f'handle cellAttributes{row,col}:{attribute,value}'))
                 if attribute == 'span':
                     try: spanCol,spanRow = value
                     except: spanRow,spanCol = 1,value
@@ -768,7 +768,7 @@ class Window(QW.QMainWindow):
         except Exception as e:
             fullAttributes = {}
         fullAttributes.update(attributes)
-        #if pargs.dbg: #printv(croppedText(f'fullAttr of {cellName}: {fullAttributes}'))
+        #if pargs.verbose: #printv(croppedText(f'fullAttr of {cellName}: {fullAttributes}'))
 
         paintItDark = False
         iValue = '?'
@@ -930,7 +930,7 @@ class Window(QW.QMainWindow):
 
     def closeEvent(self,*args):
         """Called when the window is closed"""
-        print('>closeEvent')
+        printi('>closeEvent')
         EventExit.set()
         if Win.embeddedProcess:
             try: 
@@ -1040,7 +1040,7 @@ class Window(QW.QMainWindow):
             firstDevPar = dao[0].devPar
             #print(f'devName, devPar: {devName,firstDevPar}')
             try:
-                access = dao[0].access
+                access = dao[0].Access
                 # check if device is alive
                 #TODO: for liteServer we can check time sleepage
                 #ts0 = time.time()
@@ -1309,7 +1309,7 @@ class Window(QW.QMainWindow):
             val = attr['initial']
             #print(f'restore {devPar, val}')
             #r = Access.set(parName.rsplit(NSDelimiter,1) + [val])
-            r = dao.access.set(list(devPar) + [val])
+            r = dao.Access.set(list(devPar) + [val])
             widget = self.table.cellWidget(row,col)
             widget.setStyleSheet(StyleSheet_lightBackground)
         except Exception as e:
@@ -1339,7 +1339,7 @@ def MySlot(listOfParNames):
         except:
             #printw(f'currentValue not available for {da.name}')
             continue
-        #if pargs.dbg:#do not use #printv here, could be time consuming
+        #if pargs.verbose:#do not use #printv here, could be time consuming
         #    print(croppedText(f'updating DA{rowColSlice}: {da.name, currentValue}'))
         if 'R' not in da.attr['features']:
             #print(f'not readable {da.name}')# cannot rely on this, many parameters are not properly marked
@@ -1468,7 +1468,7 @@ class DAM(QtCore.QThread):
             for dao in aggregatedDAO:
                 devPar = dao.devPar
                 try:
-                    r = dao.access.subscribe(self._callback, devPar)
+                    r = dao.Access.subscribe(self._callback, devPar)
                     printv(f'subscribed to {devPar}')
                 except Exception as e:
                     printw(f'Could not subscribe for {devPar}: {e}')
@@ -1483,7 +1483,7 @@ class DAM(QtCore.QThread):
                 if isinstance(dao,str):
                     continue
                 try:
-                    dao.access.unsubscribe()#dao.devPar)
+                    dao.Access.unsubscribe()#dao.devPar)
                 except Exception as e:
                     printw(f'In unsubscribing {dao.devPar}: {e}')
         
@@ -1519,7 +1519,7 @@ class DAM(QtCore.QThread):
                 # get values of all parameters from the host
                 aggregatedDAO = list(daoDict.values())
                 try:
-                    access = aggregatedDAO[0].access
+                    access = aggregatedDAO[0].Access
                 except KeyError:
                     printw(f'in _thread_proc: DAO disappeared')
                     self.pollingInterval = 0.
@@ -1561,11 +1561,11 @@ class DAM(QtCore.QThread):
         for hostDevParTuple,parDict in devDict.items():
             if hostDevParTuple == 'ppmuser':
                 continue
-            if pargs.dbg: printv(croppedText(f'update GUI objects of {hostDevParTuple,parDict}'))
+            if pargs.verbose: printv(croppedText(f'update GUI objects of {hostDevParTuple,parDict}'))
             # liteServer returns {'host:dev':{par1:{prop1:{},...},...}},
 
             def append_da(hostDevPar, valDict):
-                #if pargs.dbg: printv(croppedText(f'par,valDict:{hostDevPar,valDict}'))
+                #if pargs.verbose: printv(croppedText(f'par,valDict:{hostDevPar,valDict}'))
                 try:
                     dataAccess = daTable.par2objAndPos[hostDevPar][0]
                     dataAccess.currentValue = valDict
@@ -1591,8 +1591,10 @@ class DataAccess():
     """Base class for accessing Data Access Object (aka EPICS PV).
     Exception is thrown if anything gets wrong.
     """
+    Access = None
+    Namespace = 'None'
+
     def __init__(self, cnsNameDev, parName='*', vslice=None):
-        self.access = None
         self.name = NSDelimiter.join((cnsNameDev,parName))
         self.devPar = cnsNameDev,parName
         #printv(f'>DataAccess constructor {self.devPar}')
@@ -1609,12 +1611,13 @@ class DataAccess():
 
     def set(self,val):
         """Set value of the DAO"""
-        #print(f'>set {self.name} to {type(val)} {val}')
+        printv(f'>set {self.name} to {type(val)} {val}')
         if pargs.readonly:
             printw(f'Cannot set {self.name}: readonly mode') 
             return False
         try:
-            ok = self.access.set(self.name.rsplit(NSDelimiter,1) + [val])
+            ok = DataAccess.Access.set(self.name.rsplit(NSDelimiter,1) + [val])
+            printv(f'ok={ok}')
         except Exception as e:
             msg = f'in DataAccess:{e}'
             printw(msg)
@@ -1624,7 +1627,7 @@ class DataAccess():
 
     def get(self):
         """Get value of the DAO"""
-        r = self.access.get(self.devPar)
+        r = DataAccess.Access.get(self.devPar)
         return tuple(next(iter(r.values())).values())[0]
 
     def get_guiType(self, features=None):
@@ -1677,17 +1680,16 @@ class DataAccess():
 class DataAccess_epics(DataAccess):
     """Access to EPICS parameters through cad_io.epicsAccess_caproto.epicsAccess"""
     def info(self):
-        if not self.access:
+        if not DataAccess.Access:
             #import cad_io.epicsAccess_caproto as epicsAccess
             ##import cad_io_new.epicsAccess_caproto as epicsAccess# for debugging
-            #self.access = epicsAccess
+            #DataAccess.Access = epicsAccess
             from cad_epics import epics
-            self.access = epics
-        self.namespace = 'EPICS'
+            DataAccess.Access = epics
+        DataAccess.Namespace = 'EPICS'
         #devParName = self.name.rsplit(NSDelimiter,1)
         devPar = self.devPar
-        #print(f'>EPICS info {self.name}, {devPar}')#, access:{self.access}')
-        r = self.access.info(devPar)
+        r = DataAccess.Access.info(devPar)
         #print(f'info:{r}')
         ret = next(iter(r.values()))
         #print(f'ret:{ret}')
@@ -1696,23 +1698,23 @@ class DataAccess_epics(DataAccess):
 class DataAccess_lite(DataAccess):
     """Access to liteServer parameters through liteAccess.Access"""
     def info(self):
-        if not self.access:
+        if not DataAccess.Access:
             import liteaccess
-            lAccess = liteaccess.Access
-            lAccess.Dbg = pargs.dbg
-            self.access = lAccess
-        if lAccess.__version__ < '3.0.0':
+            printi(f'liteaccess {liteaccess.__version__}')
+            DataAccess.Access = liteaccess.Access
+            DataAccess.Access.set_dbg(max(pargs.verbose-1,0))
+        if DataAccess.Access.__version__ < '3.0.0':
             print(f'liteAccess version should be > 3.0.0, not {lAccess.__version__}')
             sys.exit(1)
-        self.namespace = 'LITE'
+        DataAccess.Namespace = 'LITE'
         try:
-            info = self.access.info(self.devPar)
+            info = DataAccess.Access.info(self.devPar)
         except Exception as e:
             printe(f'exception getting info for {self.devPar}: {e}')
             sys.exit(1)
         if self.devPar[1] != '*':
             # add 'value' to info
-            vdict = self.access.get(self.devPar)
+            vdict = DataAccess.Access.get(self.devPar)
             v = vdict[self.devPar]['value']
             info[self.devPar[1]]['value'] = v
         printv(croppedText(f'LITE info({self.devPar}):{info}',300))
@@ -1765,7 +1767,7 @@ class Spreadsheet():
             printe('No entry "_Rows" in the config file')
             sys.exit(0)
         printi(f'Imported: {fileName}')
-        #if pargs.dbg: #printv(croppedText(f'ConfigModule._Rows:\n{rows}'))
+        #if pargs.verbose: #printv(croppedText(f'ConfigModule._Rows:\n{rows}'))
         #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
         dead_devices = set()
         def evaluate_string(key):
@@ -1779,7 +1781,6 @@ class Spreadsheet():
             if di is None:
                 try:
                     ns = get_namespace()
-                    #DataAccess.namespace = ns
                     di = {'LITE':DataAccess_lite, 'EPICS':DataAccess_epics\
                     ,'ADO':DataAccess_ado}[ns]
                 except Exception as e:
@@ -1869,17 +1870,17 @@ class Spreadsheet():
         for row,rlist in enumerate(rows):
             if rlist is None:
                 continue
-            #if pargs.dbg: printv(croppedText(f'row,rlist:{row,rlist}', 500))
+            #if pargs.verbose: printv(croppedText(f'row,rlist:{row,rlist}', 500))
             nCols = len(rlist)
 
             rowAttr = {}
             col = -1
             for cell in rlist: 
                 col += 1
-                #if pargs.dbg: 
+                #if pargs.verbose: 
                 #printv( croppedText(f'processing cell:{cell}'))
                 cdict = evaluate_cell(cell)
-                #if pargs.dbg: print(croppedText(f'registered obj{row,col}: {cdict}'))
+                #if pargs.verbose: print(croppedText(f'registered obj{row,col}: {cdict}'))
                 obj = cdict['obj']
 
                 if col == 0 and obj == 'ATTRIBUTES':
@@ -1910,7 +1911,7 @@ class Spreadsheet():
                         printw(f'exception: {e}')
                         continue
 
-                    #if pargs.dbg: print(croppedText(f'requesting dev.par:{dev,par}, {obj.attr}'))
+                    #if pargs.verbose: print(croppedText(f'requesting dev.par:{dev,par}, {obj.attr}'))
                     if dev in self.deviceMap:
                         self.deviceMap[dev][obj.name] = obj
                     else: self.deviceMap[dev] = {obj.name:obj}
@@ -1995,8 +1996,8 @@ def main():
     'Read only mode: modification of parameters is prohibited')
     parser.add_argument('-s','--server', action='store_true', help=\
     'show server variables')
-    parser.add_argument('-v', '--verbose', nargs='*', help=\
-    'Show more log messages.')
+    parser.add_argument('-v', '--verbose', action='count', default=0, help=\
+      'Show more log messages (-vv: show even more).')
     parser.add_argument('device', nargs='?', help=\
      ('device (e.g. simple.test), if specified, then a '\
      'temporary configuration will be build'))
@@ -2006,7 +2007,6 @@ def main():
     if pargs.file is not None and pargs.device is not None:
         printe('--file option is not allowed when a device argument is supplied.')
         sys.exit(0)
-    pargs.dbg = 0 if pargs.verbose is None else len(pargs.verbose)+1
 
     # Define and set variable builtins.pypage_INSTANCE, which will
     # be acessible to all modules at runtime.
