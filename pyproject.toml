@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pypeto"
+version = "0.6.7"
+authors = [
+  { name="Andrei Sukhanov", email="cyxandr@gmail.com" },
+]
+description = "Spreadsheet view of process variables from EPICS or liteServers"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "qtpy",
+    "caproto",
+    "liteaccess",
+]
+[project.urls]
+"Homepage" = "https://github.com/ASukhanov/pypeto"
+"Bug Tracker" = "https://github.com/ASukhanov/pypeto/issues"
