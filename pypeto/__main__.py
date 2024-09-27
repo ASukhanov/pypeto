@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v0.6.8 2024-09-26'# added {} to specialChars (fix for NSLS2_PSC)
+__version__= 'v0.6.9 2024-09-26'# cad_epics/epics.py moved to pypeto
 #TODO: separate __main__.py and pypeto.py
 
 import os, threading, subprocess, sys, time, math, argparse
@@ -1684,7 +1684,7 @@ class DataAccess_epics(DataAccess):
             #import cad_io.epicsAccess_caproto as epicsAccess
             ##import cad_io_new.epicsAccess_caproto as epicsAccess# for debugging
             #DataAccess.Access = epicsAccess
-            from cad_epics import epics
+            from . import epics
             DataAccess.Access = epics
         DataAccess.Namespace = 'EPICS'
         #devParName = self.name.rsplit(NSDelimiter,1)
