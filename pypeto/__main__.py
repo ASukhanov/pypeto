@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v0.6.7 2024-07-22'# --verbose.
+__version__= 'v0.6.8 2024-09-26'# added {} to specialChars (fix for NSLS2_PSC)
 #TODO: separate __main__.py and pypeto.py
 
 import os, threading, subprocess, sys, time, math, argparse
@@ -1793,7 +1793,7 @@ class Spreadsheet():
             # The data object string should contain ':' in the middle
             import string            
             lettersAndDigits = string.ascii_letters+string.digits
-            specialChars = '_-.:[];!@#$%&?'
+            specialChars = '_-.:[];!@#$%&?{}'
             isdao = all(e in lettersAndDigits+specialChars for e in key)
             edgeAreOk = not any(e in ':.<>();\'\"' for e in key[0]+key[-1])
             #printv(f'isdao {key}: {isdao}, edgeAreOk {edgeAreOk}')
