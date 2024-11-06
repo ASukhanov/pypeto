@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v0.6.9 2024-09-26'# cad_epics/epics.py moved to pypeto
+__version__= 'v0.6.10 2024-11-06'# Spinbox reacts on Enter. This is safer!
 #TODO: separate __main__.py and pypeto.py
 
 import os, threading, subprocess, sys, time, math, argparse
@@ -217,8 +217,8 @@ class QDoubleSpinBoxDAO(SpinBox):
         self.integer = isinstance(self.lastValue, int)
         printv(f'QDoubleSpinBoxDAO {self.dao.name} int:{self.integer}, {self.lastValue}')
         #self.valueChanged.connect(self.do_action)
-        #self.editingFinished.connect(self.do_action)
-        self.sigValueChanged.connect(self.do_action)
+        self.editingFinished.connect(self.do_action)
+        #self.sigValueChanged.connect(self.do_action)
         units = self.dao.attr.get('units')
         units = ' ' + units if units else ''
         self.setOpts(dec=True, int=self.integer, suffix=units,
