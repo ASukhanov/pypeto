@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v0.6.10 2024-11-06'# Spinbox reacts on Enter. This is safer!
+__version__= 'v0.6.11 2024-11-06'# Spinbox sets DAO if widget was changed.
 #TODO: separate __main__.py and pypeto.py
 
 import os, threading, subprocess, sys, time, math, argparse
@@ -202,11 +202,10 @@ class QDoubleSpinBoxDAO(SpinBox):
     def __init__(self, dao, color=None):
         super().__init__()
         self.dao = dao
-        v = self.dao.attr['value']
-        try:
-            self.lastValue = v[0]
-        except:
-            self.lastValue = v
+        self.lastValue = None
+        ivalue = self.dao.attr['value']
+        try:    ivalue = v[0]
+        except: pass
         bounds = self.dao.attr.get('opLimits')
         if bounds:
             pass
@@ -214,8 +213,8 @@ class QDoubleSpinBoxDAO(SpinBox):
             #printw(f' no oplimits for {self.dao.name}')
             pass
         if not bounds:  bounds = (None, None)
-        self.integer = isinstance(self.lastValue, int)
-        printv(f'QDoubleSpinBoxDAO {self.dao.name} int:{self.integer}, {self.lastValue}')
+        self.integer = isinstance(ivalue, int)
+        printv(f'QDoubleSpinBoxDAO {self.dao.name} int:{self.integer}, {ivalue}')
         #self.valueChanged.connect(self.do_action)
         self.editingFinished.connect(self.do_action)
         #self.sigValueChanged.connect(self.do_action)
@@ -224,7 +223,7 @@ class QDoubleSpinBoxDAO(SpinBox):
         self.setOpts(dec=True, int=self.integer, suffix=units,
           decimals=6, bounds=bounds)
         #  compactHeight=False)#, bounds=bounds
-        if not self.integer and self.lastValue == 0.:
+        if not self.integer and ivalue == 0.:
             self.setOpts(minStep=0.01)
         self.setButtonSymbols(QW.QAbstractSpinBox.NoButtons)
         c = mkColor(color)
@@ -246,6 +245,8 @@ class QDoubleSpinBoxDAO(SpinBox):
         widgetValue = self.value()
         if self.integer:
             widgetValue = int(widgetValue)
+        if widgetValue == self.lastValue:
+            return
         r = self.dao.set(widgetValue)
         if not r:
             printw(f'Could not set {self.dao.name} {widgetValue}')
