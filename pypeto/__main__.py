@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v0.6.11 2024-11-06'# Spinbox sets DAO if widget was changed.
+__version__= 'v0.6.12 2024-11-07'# Fixed bug in QDoubleSpinBoxDAO
 #TODO: separate __main__.py and pypeto.py
 
 import os, threading, subprocess, sys, time, math, argparse
@@ -204,14 +204,9 @@ class QDoubleSpinBoxDAO(SpinBox):
         self.dao = dao
         self.lastValue = None
         ivalue = self.dao.attr['value']
-        try:    ivalue = v[0]
+        try:    ivalue = ivalue[0]
         except: pass
         bounds = self.dao.attr.get('opLimits')
-        if bounds:
-            pass
-        else:
-            #printw(f' no oplimits for {self.dao.name}')
-            pass
         if not bounds:  bounds = (None, None)
         self.integer = isinstance(ivalue, int)
         printv(f'QDoubleSpinBoxDAO {self.dao.name} int:{self.integer}, {ivalue}')
@@ -222,7 +217,6 @@ class QDoubleSpinBoxDAO(SpinBox):
         units = ' ' + units if units else ''
         self.setOpts(dec=True, int=self.integer, suffix=units,
           decimals=6, bounds=bounds)
-        #  compactHeight=False)#, bounds=bounds
         if not self.integer and ivalue == 0.:
             self.setOpts(minStep=0.01)
         self.setButtonSymbols(QW.QAbstractSpinBox.NoButtons)
@@ -269,9 +263,7 @@ class QComboBoxDAO(QW.QComboBox):
         v = self.dao.attr['value'][0]
         self.lastValue = v
         printv(f'QComboBoxDAO {self.dao.name}')
-        #lvs = dao.attr['legalValues'].split(',')
         lvs = dao.attr['legalValues']
-        #print( f'lvs:{lvs}')
         if lvs:
             for lv in lvs:
                 self.addItem(str(lv))
