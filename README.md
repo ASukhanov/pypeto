@@ -17,18 +17,19 @@ Supported:
 ## Tests:
 
 ### Control of the litePeakSimulator
+The testing requires sattellite modules **litePeakSimulator and pypeto**. They could be installed using pip:
+
+    python3 -m pip install liteserver,pypeto
+
 Start the litePeakSimulator liteserver on localhost if it is not running yet.
-    cd ~/github/liteServer
-    python3 -m liteserver.device.litePeakSimulator -ilo
+
+    python3 -m liteserver.device.litePeakSimulator -ilo -p9710
 
 Connect to litePeakSimulator from pypeto:
-    cd ~/github/pypeto
-    python3 -m pypeto -aLITE localhost:dev1&
 
-Using interactive selection of configurations 
+    python3 -m pypeto -aLITE localhost;9710:dev1&
 
-    pypeto
+Using pypeto configuration file peakSimulator_pp.py:
 
-Using pypeto configuration file:
-
-    pypeto -f tst
+    cd github/pypeto
+    python3 -m pypeto -f peakSimulator
