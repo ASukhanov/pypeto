@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v0.6.12 2024-11-07'# Fixed bug in QDoubleSpinBoxDAO
+__version__= 'v0.7.0 2024-11-08'# accept $EDITOR and $BROWSER evironment variable, ConfigModule._WindowTitle, remove non-static globals
 #TODO: separate __main__.py and pypeto.py
 
 import os, threading, subprocess, sys, time, math, argparse
@@ -14,28 +14,31 @@ import traceback
 from functools import partial
 import builtins # for "Monkey patching" of pypages
 from os import system as os_system, environ as os_environ
+
 # The MKL library may take lots of CPU unexpectedly.
-os_environ["OMP_NUM_THREADS"] = "1"
+# It is not a case here
+#os_environ["OMP_NUM_THREADS"] = "1"
+
+# Use Editor as it is defined in the $EDITOR environment variable.
+try:    Editor = os_environ["EDITOR"]
+except: Editor = 'gedit'
+
+try:    Browser = os_environ["BROWSER"]
+except: Browser = 'firefox'
 
 #``````````````````Globals````````````````````````````````````````````````````
 AppName = 'pypeto'
 DefaultNamespace = 'EPICS'
-WWW_wiki = ''
-WWW_help = ''
-rootDirectory = '/operations/app_store/pypet/'
 
 Process_data_Lock = threading.Lock()# it has no effect
 pargs = None
-InitializationFinished = False# it is neaded for handling non-readable parameters
 EventExit = threading.Event()
-ConfigDirectory = rootDirectory+'pages/'
 DataDeliveryModes = {'Asynchronous':0., 'Stopped':0., 'Polling 1 s':1.,
     'Polling 0.1 s':0.1, 'Polling 0.01 s':0.01, 'Polling 0.001 s':0.001,
     'Polling 10 s':10., 'Polling 1 min':60.}
 StyleSheet_darkBackground = 'background-color: rgb(120, 120, 0); color: white'
 StyleSheet_lightBackground = 'background-color: white; color: black'
 Win = None
-ConfigModule = None
 NSDelimiter = ':'
 #ButtonStyleSheet = 'border: 2px solid #8f8f91;border-radius: 6px;'
 #ButtonStyleSheet = 'border-radius: 6px;'# border-width: 2px; border-color: black;'
@@ -145,7 +148,7 @@ def pvplot(devPars, plotType=None, dialog=None):
 
 def get_namespace():
     """Retrieve namespace (EPICS or LITE from configuation"""
-    try:    ns = ConfigModule._Namespace
+    try:    ns = Spreadsheet.ConfigModule._Namespace
     except: ns = None
     #printv(f'config namespace: {ns}')
     if ns is None:
@@ -381,7 +384,7 @@ class myTableWidget(QW.QTableWidget):
             return
         if button == 2: # right button
             try:
-                dao = daTable.pos2obj[(row,col)][0]
+                dao = Window.daTable.pos2obj[(row,col)][0]
                 #print( f'rclick{row,col}')
                 if issubclass(type(dao),DataAccess):
                     #printv(f'RightClick at DAO {dao.name}')
@@ -429,7 +432,7 @@ class QSliderDAO(QW.QSlider):
         return v
 
     def handle_value_changed(self):
-        #if not InitializationFinished:
+        #if not Window.InitializationFinished:
         #    print(f'init not finished')
         #    return
         handlePosition = self.value()
@@ -452,6 +455,9 @@ class QSliderDAO(QW.QSlider):
 class Window(QW.QMainWindow):
     """Main window"""
     bottomLine = None
+    InitializationFinished = False
+    daTable = None
+
     def __init__(self):
         QW.QWidget.__init__(self)
         self.embeddedProcess = None
@@ -530,27 +536,20 @@ class Window(QW.QMainWindow):
 
         helpMenu = menubar.addMenu('&Help')
         def wikiMenuAct():
-            cmd = WWW_wiki
-            subprocess.Popen(cmd.split())
+            os_system(f'{Browser} https://github.com/ASukhanov/pypeto')
         wikiMenu = QW.QAction(f"About &{AppName}", self\
         , triggered = wikiMenuAct)
         helpMenu.addAction(wikiMenu)
-        def projectMenuAct():
-            cmd = WWW_help
-            subprocess.Popen(cmd.split())
-        projectMenu = QW.QAction(f"{AppName} &git", self\
-        , triggered = projectMenuAct)
-        helpMenu.addAction(projectMenu)
         try:
-            pageHelp = ConfigModule._PageHelp
+            pageHelp = Spreadsheet.ConfigModule._PageHelp
             helpMenu.addSeparator()
             def pageHelpAct():
-                os_system(f'firefox {pageHelp}')
+                os_system(f'{Browser} {pageHelp}')
             pageHelpMenu = QW.QAction("About this &page", self\
             , triggered = pageHelpAct)
             helpMenu.addAction(pageHelpMenu)
         except Exception as e:
-            printi(f'in pageHelp menu: {e}')
+            printw(f'in pageHelp menu: {e}')
             pass
 
         self.update_statusBar(f'{AppName} version {__version__}')
@@ -558,7 +557,13 @@ class Window(QW.QMainWindow):
         self.widgetColor = {}
 
         pf = '' if pargs.file is None else ' '+pargs.file
-        title = ('snapShot' if pargs.restore else f'{AppName}') + pf
+        if pargs.restore:
+            title = 'snapShot'+pf
+        else:
+            try:
+                title = Spreadsheet.ConfigModule._WindowTitle
+            except:
+                title = f'{AppName}'+pf
         self.setWindowTitle(title)
         #Win.resize(350, 300)
         self.screenGeometry = QW.QDesktopWidget().screenGeometry().getRect()
@@ -587,20 +592,18 @@ class Window(QW.QMainWindow):
 
     def load_table(self):
         """Load table from saved snapshot"""
-        global daTable, InitializationFinished
         # read config file
-        try:    del daTable
+        try:    del Window.daTable
         except: pass
-        InitializationFinished = False
-        daTable = Spreadsheet(pargs.file)
-        rows, columns = daTable.shape
+        Window.daTable = Spreadsheet(pargs.file)
+        rows, columns = Window.daTable.shape
         self.table = myTableWidget(rows, columns, self)
         self.table.setShowGrid(False)
         self.table.setSizeAdjustPolicy(
             QW.QAbstractScrollArea.AdjustToContents)
         self.table.verticalHeader().setVisible(True)
-        #self.columnAttributes = ConfigModule.get('columns')
-        try:    self.columnAttributes = ConfigModule._Columns
+        #self.columnAttributes = Spreadsheet.ConfigModule.get('columns')
+        try:    self.columnAttributes = Spreadsheet.ConfigModule._Columns
         except Exception as e:
             printw(f'exception with columnAttributes {e}')
             self.columnAttributes = {}
@@ -615,11 +618,11 @@ class Window(QW.QMainWindow):
         if pargs.hidemenubar:
             self.hide_menuBar()
         self.fitToTable()
-        InitializationFinished = True
+        Window.InitializationFinished = True
 
     def edit_table(self):
         """Edit page file externally using gedit"""
-        cmd = f'gedit {pargs.configDir}{pargs.file}.py'
+        cmd = f'{Editor} {Spreadsheet.ConfigModule.__file__}'
         printi(f'executing: {cmd}')
         subprocess.Popen(cmd.split())
 
@@ -653,16 +656,16 @@ class Window(QW.QMainWindow):
     def _process_daTable(self,rows,columns):
         """Part of the load_table. Build par2objAndPos from pos2obj"""
         #print('>_process_daTable}')
-        try:    defaultColor = ConfigModule._Page['color']
+        try:    defaultColor = Spreadsheet.ConfigModule._Page['color']
         except: defaultColor = 'white'
         for row in range(rows):
           self.table.setRowHeight(row,20)
           #try:  
-          #  if daTable.pos2obj[(row,0)][0] is None:
+          #  if Window.daTable.pos2obj[(row,0)][0] is None:
           #          continue
           #except:   continue
           for col in range(columns):
-            try: obj,cellAttribute = daTable.pos2obj[(row,col)]
+            try: obj,cellAttribute = Window.daTable.pos2obj[(row,col)]
             except Exception as e:
                 #printv('Not an object,{}:'+str(e))
                 continue
@@ -708,9 +711,9 @@ class Window(QW.QMainWindow):
                     cellAttribute['widget'] = gt
 
             # store a list of row,col's as the same object may be addressed from several cells
-            entry = daTable.par2objAndPos.get(dataAccess.name)
+            entry = Window.daTable.par2objAndPos.get(dataAccess.name)
             if entry is None:
-                daTable.par2objAndPos[dataAccess.name] = (dataAccess, [((row,col),vslice)])
+                Window.daTable.par2objAndPos[dataAccess.name] = (dataAccess, [((row,col),vslice)])
             else:
                 entry[1].append(((row,col),vslice))
 
@@ -723,7 +726,7 @@ class Window(QW.QMainWindow):
                 
             # deduct the cell type from DAO
             self.set_tableItem(row, col, item, cellAttribute, dataAccess)
-        #printv(croppedText(f'par2objAndPos: {daTable.par2objAndPos}'))
+        #printv(croppedText(f'par2objAndPos: {Window.daTable.par2objAndPos}'))
         self.table.resizeColumnsToContents()
         #self.table.setColumnWidth(0,60)
         if self.columnAttributes:
@@ -1028,7 +1031,7 @@ class Window(QW.QMainWindow):
             printe(f'Not supported namespace: {namespace}')
             return
 
-        for devName,daoDict in daTable.deviceMap.items():
+        for devName,daoDict in Window.daTable.deviceMap.items():
             dao = list(daoDict.values())
             firstDevPar = dao[0].devPar
             #print(f'devName, devPar: {devName,firstDevPar}')
@@ -1054,7 +1057,7 @@ class Window(QW.QMainWindow):
 
     def connectionLost(self,host):
         printw(f'Lost connection to {host}')
-        for devPar,ObjAndPos in daTable.par2objAndPos.items():
+        for devPar,ObjAndPos in Window.daTable.par2objAndPos.items():
             dev,par = devPar.rsplit(NSDelimiter,1)
             obj,rowCols = ObjAndPos
             if dev == host:
@@ -1072,7 +1075,7 @@ class Window(QW.QMainWindow):
 
     def connectionRecovered(self, host):
         printw(f'Connection to {host} is restored')
-        for devPar,ObjAndPos in daTable.par2objAndPos.items():
+        for devPar,ObjAndPos in Window.daTable.par2objAndPos.items():
             dev,par = devPar.rsplit(NSDelimiter,1)
             obj,rowCols = ObjAndPos
             if dev == host:
@@ -1134,7 +1137,7 @@ class Window(QW.QMainWindow):
         selecteItems = self.table.selectedItems()
         for item in selecteItems:
             row,col = item.row(), item.column()
-            dao = daTable.pos2obj[(row,col)][0]
+            dao = Window.daTable.pos2obj[(row,col)][0]
             if not isinstance(dao, DataAccess):
                 continue
             devPar = dao.name
@@ -1192,7 +1195,7 @@ class Window(QW.QMainWindow):
         row = []
         rows = [row]
         prevrowNumber, prevcolNumber = 0,0
-        for key, value in daTable.pos2obj.items():
+        for key, value in Window.daTable.pos2obj.items():
             #print(f'row,col:{key}, obj:{value[0]}, attr:{value[1]}')
             rowNumber,colNumber = key
             if rowNumber > prevrowNumber:
@@ -1235,7 +1238,7 @@ class Window(QW.QMainWindow):
             row.append({txt:attr})
             #except Exception as e:
             #    printe(f'in save_snapshot:{e}')
-        try:    namespace = ConfigModule._Namespace
+        try:    namespace = Spreadsheet.ConfigModule._Namespace
         except: namespace = DefaultNamespace
         content = f"_Namespace = '{namespace}'\n"
         content += f'_Columns = {self.columnAttributes}\n'
@@ -1275,7 +1278,7 @@ class Window(QW.QMainWindow):
         x += w
         rx = round(x/self.screenGeometry[2],3)
         ry = round(y/self.screenGeometry[3],3)
-        cmd = f'{AppName} -r -e -g{rx},{ry} -c{snapshotDir}'
+        cmd = f'python3 -m {AppName} -r -e -g{rx},{ry} -c{snapshotDir}'
         printi(f'cmd: {cmd}')
         subprocess.Popen(cmd.split())#,stdout=subprocess.PIPE)
 
@@ -1297,7 +1300,7 @@ class Window(QW.QMainWindow):
 
     def restore_parameter(self, row, col):
         try:
-            dao,attr = daTable.pos2obj[(row,col)]
+            dao,attr = Window.daTable.pos2obj[(row,col)]
             devPar = dao.devPar
             val = attr['initial']
             #print(f'restore {devPar, val}')
@@ -1315,9 +1318,9 @@ def MySlot(listOfParNames):
   with Process_data_Lock:
     #print(f'>MySlot received event: {listOfParNames}')
     if listOfParNames is None:
-        daRowCols = daTable.par2objAndPos.values()
+        daRowCols = Window.daTable.par2objAndPos.values()
     else:
-        daRowCols = [daTable.par2objAndPos[i] for i in  listOfParNames] 
+        daRowCols = [Window.daTable.par2objAndPos[i] for i in  listOfParNames] 
     mainWidget = Win.table
     errMsg = ''
     if DataAccessMonitor.Perf: ts = timer()
@@ -1383,7 +1386,7 @@ def MySlot(listOfParNames):
             else:
                 val = val[0]
                 #printv('DAO '+da.name+' is '+str(type(val)))
-                obj,cellAttr = daTable.pos2obj[rowCol]
+                obj,cellAttr = Window.daTable.pos2obj[rowCol]
                 fmt = cellAttr.get('format')
                 txt = v2t(val, fmt=fmt)
                 units = da.attr.get('units')
@@ -1417,7 +1420,7 @@ class DAM(QtCore.QThread):
     Perf = False
     # inheritance from QtCore.QThread is needed for qt signals
     SignalSourceDataReady = QtCore.Signal(object)
-    hostDAOs = {}#TODO: why not to use daTable.deviceMap directly
+    hostDAOs = {}#TODO: why not to use Window.daTable.deviceMap directly
     currentDeliveryMode = 'Stopped'
     def __init__(self):
         # for signal/slot paradigm we need to call the parent init
@@ -1436,7 +1439,7 @@ class DAM(QtCore.QThread):
         """
         self._stop()
         if len(self.hostDAOs) == 0:
-            self.hostDAOs = daTable.deviceMap
+            self.hostDAOs = Window.daTable.deviceMap
         #print(f'hostDAOs: {self.hostDAOs}')
         self.pollingInterval = DataDeliveryModes[modeTxt]
         func = {'Asyn':self._setup_asyncDelivery,
@@ -1560,7 +1563,7 @@ class DAM(QtCore.QThread):
             def append_da(hostDevPar, valDict):
                 #if pargs.verbose: printv(croppedText(f'par,valDict:{hostDevPar,valDict}'))
                 try:
-                    dataAccess = daTable.par2objAndPos[hostDevPar][0]
+                    dataAccess = Window.daTable.par2objAndPos[hostDevPar][0]
                     dataAccess.currentValue = valDict
                     dataAccess.attr['value'] = valDict
                     da.append(hostDevPar)
@@ -1654,7 +1657,7 @@ class DataAccess():
     def is_editable(self):
         #printv(croppedText(f"is_ed {self.name}\n{self.attr}"))
         try:
-            page_is_editable = ConfigModule._Page['editable']
+            page_is_editable = Spreadsheet.ConfigModule._Page['editable']
         except Exception as e:
             page_is_editable = True
         if not page_is_editable:
@@ -1724,8 +1727,9 @@ class DataAccess_ado(DataAccess):
 #``````````````````Data access table``````````````````````````````````````````
 class Spreadsheet():
     """DataAccess table maps: parameter to (row,col) and (row,col) to object"""
+    ConfigModule = None
+
     def __init__(self, moduleFile):
-        global ConfigModule
         self.par2objAndPos = {}# map of {parameterName:dataAccessObject,[(row,col),vslice]}
         self.pos2obj = {}#      map of {(row,col):dataAccessObject}
         self.deviceMap = {}#    map of {deviceName:[dataAccessObject,...]}
@@ -1738,7 +1742,6 @@ class Spreadsheet():
             moduleFile = build_temporary_pvfile(pargs.device)
         #``````````read conguration file into the config dictionary```````````````
         sys.path.append(configDir)
-        fileName = f'{configDir}{moduleFile}.py'
         from importlib import import_module, reload
         moduleFile = moduleFile.replace(configDir,'')
         module = moduleFile.replace('/','.')
@@ -1746,21 +1749,20 @@ class Spreadsheet():
             sys.exit(0)
         
         try:
-            if ConfigModule is not None:
-                ConfigModule = reload(ConfigModule)
+            if Spreadsheet.ConfigModule is not None:
+                Spreadsheet.ConfigModule = reload(Spreadsheet.ConfigModule)
                 printi(f'Module {module} reloaded')
             else:
                 print(f'importing {module}')
-                ConfigModule = import_module(module)
+                Spreadsheet.ConfigModule = import_module(module)
         except ModuleNotFoundError as e:
-            printe(f'Trying to import {fileName}: {e}')
+            printe(f'Trying to import {configDir}{moduleFile}.py: {e}')
             sys.exit(0)
-        try:    rows = ConfigModule._Rows
+        try:    rows = Spreadsheet.ConfigModule._Rows
         except:
             printe('No entry "_Rows" in the config file')
             sys.exit(0)
-        printi(f'Imported: {fileName}')
-        #if pargs.verbose: #printv(croppedText(f'ConfigModule._Rows:\n{rows}'))
+        printi(f'Imported: {Spreadsheet.ConfigModule.__file__}')
         #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
         dead_devices = set()
         def evaluate_string(key):
@@ -1972,7 +1974,7 @@ def main():
     parser.add_argument('-a','--access', default=DefaultNamespace, help=\
      'Infrastructure', choices=['EPICS', 'LITE'])
     parser.add_argument('-c','--configDir',
-     default = ConfigDirectory, help=\
+     default = '/operations/app_store/pypet/pages/', help=\
      f'Config directory')
     parser.add_argument('-e','--dont_embed', action='store_true', help=\
      'Do not embed other applications') 
@@ -2020,8 +2022,6 @@ def main():
     if pargs.file:
         if pargs.file[-3:] != '_pp':
             pargs.file += '_pp'
-        #printi('Monitoring DataAccess as defined in '\
-        #+ConfigDirectory+pargs.file+'.py')
     else:
         if not pargs.device:
             pargs.file = select_file_interactively(pargs.configDir)
