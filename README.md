@@ -15,16 +15,18 @@ Supported:
  - slicing of vector parameters.
 
 ## Tests:
-- Control of a simulated oscilloscope from EPICS Channel Access infrastructure, 
+Control of a simulated oscilloscope from EPICS Channel Access infrastructure, 
  https://epics.anl.gov/modules/soft/asyn/R4-38/asynDriver.html#testAsynPortDriverApp<br>
-```python -m pypeto -cconfig -fsimScope -e
-```
-- Control of a simulated oscilloscope from EPICS PVAccess infrastructure:<br>
-```python -m pypeto -cconfig -fsimScopePVA -e
-```
-- Control of a peak simulator from LiteServer infrastructure:<br>
-```python -m pypeto -cconfig -fpeakSimulator -e
-```
+
+    python -m pypeto -cconfig -fsimScope -e
+
+Control of a simulated oscilloscope from EPICS PVAccess infrastructure:<br>
+
+    python -m pypeto -cconfig -fsimScopePVA -e
+
+Control of a peak simulator from LiteServer infrastructure:<br>
+
+    python -m pypeto -cconfig -fpeakSimulator -e
 
 ### Control of the litePeakSimulator
 The testing requires sattellite modules **litePeakSimulator and pypeto**. They could be installed using pip:
