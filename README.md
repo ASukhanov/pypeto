@@ -1,5 +1,5 @@
 # pypeto
-PyQt-based tabular user interface for designing and implementing control screens for EPICS and LiteServer devices.
+PyQt-based tabular user interface for designing and implementing control screens for EPICS (CA and PVA) and LiteServer devices.
 
 Supported:
  - control of EPICS PVs and liteServer PVs,
@@ -15,6 +15,16 @@ Supported:
  - slicing of vector parameters.
 
 ## Tests:
+- Control of a simulated oscilloscope from EPICS Channel Access infrastructure, 
+ https://epics.anl.gov/modules/soft/asyn/R4-38/asynDriver.html#testAsynPortDriverApp<br>
+```python -m pypeto -cconfig -fsimScope -e
+```
+- Control of a simulated oscilloscope from EPICS PVAccess infrastructure:<br>
+```python -m pypeto -cconfig -fsimScopePVA -e
+```
+- Control of a peak simulator from LiteServer infrastructure:<br>
+```python -m pypeto -cconfig -fpeakSimulator -e
+```
 
 ### Control of the litePeakSimulator
 The testing requires sattellite modules **litePeakSimulator and pypeto**. They could be installed using pip:
@@ -27,7 +37,7 @@ Start the litePeakSimulator liteserver on localhost if it is not running yet.
 
 Connect to litePeakSimulator from pypeto:
 
-    python3 -m pypeto -aLITE localhost;9710:dev1&
+    python3 -m pypeto -aLITE 'localhost;9710:dev1'&
 
 Using pypeto configuration file peakSimulator_pp.py:
 

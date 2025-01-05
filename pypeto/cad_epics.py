@@ -32,12 +32,15 @@ def _printd(msg):
 def init():
     return
 
-def _get_pv(devPar:tuple):
-    pvName = ''.join(devPar)
+def _pvname(devPar:tuple):
+    return ':'.join(devPar)
+
+def _get_pv(pvName):
     r = _PVCache.get(pvName)
     if r is None:
-        _printd(f'register pv {pvName} {devPar}')
-        pv,*_ = _Ctx.get_pvs(''.join(pvName), timeout=2)
+        #print(f'register pv {pvName}')
+        pv,*_ = _Ctx.get_pvs(pvName, timeout=2)
+        devPar = tuple(pvName.rsplit(':',1))
         _PVCache[pvName] = [pv, None, None, devPar]
         _fill_PVCacheProps(pv)
     else:
@@ -109,14 +112,15 @@ def _fill_PVCacheProps(pv):
 
 def info(devPar:tuple):
     """Abridged PV info"""
-    pvName = ''.join(devPar)
-    pv = _get_pv(devPar)
+    pvName = _pvname(devPar)
+    pv = _get_pv(pvName)
     return {devPar:_PVCache[pvName][_PVC_Props]}
 
 def get(devPar:tuple, *args, **kwargs):
     '''Returns devPar-keyed map of PV properties: {'value','timestamp'...}'''
-    pvName = ''.join(devPar)
-    pv = _get_pv(devPar)
+    pvName = _pvname(devPar)
+    #print(f'>get: {devPar, pvName}')
+    pv = _get_pv(pvName)
     pvData = pv.read(data_type='time')
     rDict = _unpack_ReadNotifyResponse(pvName, pvData)
     return rDict
@@ -126,8 +130,8 @@ def set(devParValue:tuple):
     '''
     dev, par, value = devParValue
     #print(f'epicsAccess.set({dev,par,value})')
-    pvName = ''.join((dev,par))
-    pv = _get_pv((dev,par))
+    pvName = _pvname((dev,par))
+    pv = _get_pv(pvName)
     try: # if PV has legalValues then the value should be index of legalValues
         value = _PVCache[pvName][_PVC_Props]['legalValues'].index(value)
     except Exception as e:
@@ -174,8 +178,8 @@ def _callback(subscription, pvData):
     
 def subscribe(callback:callable, devPar:tuple):
     '''Subscribe callback method to changes of PVs, defined by devPar'''
-    pvName = ''.join(devPar)
-    pv = _get_pv(devPar)
+    pvName = _pvname(devPar)
+    pv = _get_pv(pvName)
     subscription = pv.subscribe(data_type='time')
     _PVCache[pvName][_PVC_CB] = callback
     subscription.add_callback(_callback)
