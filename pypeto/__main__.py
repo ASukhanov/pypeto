@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServer infrastructure"""
-__version__= 'v0.8.0 2025-01-03'# 
+__version__= 'v1.0.1 2025-01-06'# 
 import argparse
 from . import pypet
 
@@ -10,7 +10,7 @@ pypet.DefaultNamespace = 'EPICS'
 def main():
     parser = argparse.ArgumentParser(description = __doc__
     ,formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    ,epilog=f'{pypet.AppName}: {__version__}')
+    ,epilog=f'{pypet.AppName}: {pypet.__version__}')
     parser.add_argument('-a','--access', default=pypet.DefaultNamespace, help=\
      'Infrastructure', choices=['EPICS', 'PVA', 'LITE'])
     parser.add_argument('-c','--configDir',

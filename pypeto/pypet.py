@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v0.8.0 2025-01-05'# 
+__version__= 'v1.0.1 2025-01-07'# fixed an issue in QComboBoxDAO
 #TODO: separate __main__.py and pypeto.py
 
 import os, threading, subprocess, sys, time, math
@@ -39,7 +39,6 @@ DataDeliveryModes = {'Asynchronous':0., 'Stopped':0., 'Polling 1 s':1.,
 StyleSheet_darkBackground = 'background-color: rgb(120, 120, 0); color: white'
 StyleSheet_lightBackground = 'background-color: white; color: black'
 Win = None
-NSDelimiter = ':'
 #ButtonStyleSheet = 'border: 2px solid #8f8f91;border-radius: 6px;'
 #ButtonStyleSheet = 'border-radius: 6px;'# border-width: 2px; border-color: black;'
 ButtonStyleSheet = ''
@@ -263,8 +262,8 @@ class QComboBoxDAO(QW.QComboBox):
         super().__init__()
         self.setEditable(True)
         self.dao = dao
-        #print(f'dao.attr: {self.dao.name, dao.attr}')
-        v = self.dao.attr['value'][0]
+        try:    v = self.dao.attr['value'][0]
+        except: v = self.dao.attr['value']
         self.lastValue = v
         printv(f'QComboBoxDAO {self.dao.name}')
         lvs = dao.attr['legalValues']
@@ -885,7 +884,7 @@ class Window(QW.QMainWindow):
                     widget = QLineEditDAO(dataAccess)
                     widget.setText(v2t(iValue, fmt=fmt))
                 elif value == 'button':
-                    printv( f">button: {cellName.rsplit(NSDelimiter,1)[-1]}")
+                    printv( f">button: {cellName.rsplit(':',1)[-1]}")
                     txt = fullAttributes.get('text')
                     widget = QPushButtonDAO(dataAccess,txt)
                 elif value == 'hslider':
@@ -1061,7 +1060,7 @@ class Window(QW.QMainWindow):
     def connectionLost(self,host):
         printw(f'Lost connection to {host}')
         for devPar,ObjAndPos in Window.daTable.par2objAndPos.items():
-            dev,par = devPar.rsplit(NSDelimiter,1)
+            dev,par = devPar.rsplit(':',1)
             obj,rowCols = ObjAndPos
             if dev == host:
                 #print(f'paint it pink: {rowCols}')
@@ -1079,7 +1078,7 @@ class Window(QW.QMainWindow):
     def connectionRecovered(self, host):
         printw(f'Connection to {host} is restored')
         for devPar,ObjAndPos in Window.daTable.par2objAndPos.items():
-            dev,par = devPar.rsplit(NSDelimiter,1)
+            dev,par = devPar.rsplit(':',1)
             obj,rowCols = ObjAndPos
             if dev == host:
                 #print(f'paint it white: {rowCols}')
@@ -1307,7 +1306,7 @@ class Window(QW.QMainWindow):
             devPar = dao.devPar
             val = attr['initial']
             #print(f'restore {devPar, val}')
-            #r = Access.set(parName.rsplit(NSDelimiter,1) + [val])
+            #r = Access.set(parName.rsplit(':',1) + [val])
             r = dao.Access.set(list(devPar) + [val])
             widget = self.table.cellWidget(row,col)
             widget.setStyleSheet(StyleSheet_lightBackground)
@@ -1511,7 +1510,7 @@ class DAM(QtCore.QThread):
 
     def _thread_proc(self):
         printi(f'>thread_proc ------------------------------')
-        while not EventExit.isSet() and self.pollingInterval != 0.:
+        while not EventExit.is_set() and self.pollingInterval != 0.:
             # collect data from all hosts and fill daTable with data
             dataReceived = True
             for host,daoDict in self.hostDAOs.items():
@@ -1574,13 +1573,13 @@ class DAM(QtCore.QThread):
                     printe(f'in append_da {hostDevPar, valDict}')
 
             if isinstance(hostDevParTuple,tuple):
-                hostDevPar = NSDelimiter.join(hostDevParTuple)
+                hostDevPar = ':'.join(hostDevParTuple)
                 valDict = parDict['value']
                 append_da(hostDevPar, valDict)
             else: #liteServer provide data keyed with hostDev, not devPar
                 hostDev = hostDevParTuple
                 for par, pd in parDict.items():
-                    hostDevPar = hostDev+NSDelimiter+par
+                    hostDevPar = hostDev+':'+par
                     append_da(hostDevPar, pd['value'])
         return da
 DataAccessMonitor = DAM()
@@ -1594,7 +1593,7 @@ class DataAccess():
     Namespace = 'None'
 
     def __init__(self, cnsNameDev, parName='*', vslice=None):
-        self.name = NSDelimiter.join((cnsNameDev,parName))
+        self.name = ':'.join((cnsNameDev,parName))
         self.devPar = cnsNameDev,parName
         #printv(f'>DataAccess constructor {self.devPar}')
         self.attr = self.info()
@@ -1615,7 +1614,7 @@ class DataAccess():
             printw(f'Cannot set {self.name}: readonly mode') 
             return False
         try:
-            ok = DataAccess.Access.set(self.name.rsplit(NSDelimiter,1) + [val])
+            ok = DataAccess.Access.set(self.name.rsplit(':',1) + [val])
             printv(f'ok={ok}')
         except Exception as e:
             msg = f'in DataAccess:{e}'
@@ -1681,10 +1680,14 @@ class DataAccess_epics(DataAccess):
     """Access to EPICS namespace"""
     def info(self):
         if not DataAccess.Access:
-            from . import cad_epics
+            try:
+                from . import cad_epics# This is standard location
+            except:
+                from cad_epics import epics as cad_epics
             DataAccess.Access = cad_epics
+            print(f'Imported cad_epics {DataAccess.Access.__version__}')
         DataAccess.Namespace = 'EPICS'
-        #devParName = self.name.rsplit(NSDelimiter,1)
+        #devParName = self.name.rsplit(':',1)
         devPar = self.devPar
         r = DataAccess.Access.info(devPar)
         #print(f'info:{r}')
@@ -1696,8 +1699,12 @@ class DataAccess_pva(DataAccess):
     """Access to EPICS PVAccess namespace"""
     def info(self):
         if not DataAccess.Access:
-            from . import cad_pvaccess
+            try:
+                from . import cad_pvaccess# This is standard location
+            except:
+                from cad_pvaccess import pvaccess as cad_pvaccess
             DataAccess.Access = cad_pvaccess
+            print(f'Imported cad_pvaccess {DataAccess.Access.__version__}')
         DataAccess.Namespace = 'PVA'
         devPar = self.devPar
         r = DataAccess.Access.info(devPar)
@@ -1805,12 +1812,12 @@ class Spreadsheet():
             isdao = all(e in lettersAndDigits+specialChars for e in key)
             edgeAreOk = not any(e in ':.<>();\'\"' for e in key[0]+key[-1])
             #printv(f'isdao {key}: {isdao}, edgeAreOk {edgeAreOk}')
-            isdao = (isdao and edgeAreOk and NSDelimiter in key)
+            isdao = (isdao and edgeAreOk and ':' in key)
 
             if isdao:
                 #printv(f'dao:{key}')
                 devPar, vslice = split_slice(key)
-                dev,par = devPar.rsplit(NSDelimiter,1)
+                dev,par = devPar.rsplit(':',1)
                 #printv(f'dev,par,vslice: {dev,par,vslice}')
                 if dev in dead_devices:
                     txt = '?'
@@ -1903,7 +1910,7 @@ class Spreadsheet():
                 self.pos2obj[(row,col)] = obj, cellAttr.copy()
                 
                 if issubclass(type(obj), DataAccess):
-                    dev,par = obj.name.rsplit(NSDelimiter,1)
+                    dev,par = obj.name.rsplit(':',1)
 
                     # do not request configuration parameters
                     try:

@@ -6,7 +6,7 @@ The EPICS PV name is concatenation of the deviceName and parameterName
 For example: epics.get(('testAPD:scope1:','MaxValue_RBV')) returns 
 {('testAPD:scope1:', 'MaxValue_RBV'): {'value': 1.5620877339306638, 'timestamp': 1681488886.923712, 'alarm': 0}}
 """
-__version__ = 'v0.0.2 2023-04-14'# No colon separation when splitting PV name to (device,parameter) tuple.
+__version__ = 'v0.0.3 2023-04-14'# No colon separation when splitting PV name to (device,parameter) tuple.
 
 #from time import perf_counter as timer
 
