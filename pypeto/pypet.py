@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v1.0.1 2025-01-07'# fixed an issue in QComboBoxDAO
+__version__= 'v1.0.2 2025-04-15'# sys.exit() when window is closed
 #TODO: separate __main__.py and pypeto.py
+#TODO: embedding works on Raspberry and Lubuntu but not on RedHat
 
 import os, threading, subprocess, sys, time, math
 timer = time.perf_counter
@@ -934,6 +935,7 @@ class Window(QW.QMainWindow):
                 printi('killing the embedded process')
                 Win.embeddedProcess.kill()
             except: pass
+        sys.exit(1)
 
     def handleItemPressed(self, item):
         #printv('pressed[%i,%i]'%(item.row(),item.column()))
@@ -1130,8 +1132,8 @@ class Window(QW.QMainWindow):
             f'{program}" to cell {row,col}'))#: {e}')
             return
         embed_window = QtGui.QWindow.fromWinId(winid)
-        embed_widget = QW.QWidget.createWindowContainer(embed_window\
-        ,self)
+        embed_widget = QW.QWidget.createWindowContainer(embed_window,
+          self)#, QtCore.Qt.FramelessWindowHint)
         self.table.setCellWidget(row, col, embed_widget)
         self.embedTimer.stop()
 
