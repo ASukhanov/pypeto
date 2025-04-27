@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v1.0.2 2025-04-15'# sys.exit() when window is closed
-#TODO: separate __main__.py and pypeto.py
+__version__= 'v1.0.3 2025-04-26'# editor is launched using xdg-open
 #TODO: embedding works on Raspberry and Lubuntu but not on RedHat
 
 import os, threading, subprocess, sys, time, math
@@ -15,14 +14,6 @@ import traceback
 from functools import partial
 import builtins # for "Monkey patching" of pypages
 from os import system as os_system, environ as os_environ
-
-# The MKL library may take lots of CPU unexpectedly.
-# It is not a case here
-#os_environ["OMP_NUM_THREADS"] = "1"
-
-# Use Editor as it is defined in the $EDITOR environment variable.
-try:    Editor = os_environ["EDITOR"]
-except: Editor = 'gedit'
 
 try:    Browser = os_environ["BROWSER"]
 except: Browser = 'firefox'
@@ -622,8 +613,8 @@ class Window(QW.QMainWindow):
         Window.InitializationFinished = True
 
     def edit_table(self):
-        """Edit page file externally using gedit"""
-        cmd = f'{Editor} {Spreadsheet.ConfigModule.__file__}'
+        """Edit page file externally"""
+        cmd = f'xdg-open {Spreadsheet.ConfigModule.__file__}'
         printi(f'executing: {cmd}')
         subprocess.Popen(cmd.split())
 
