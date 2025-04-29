@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pypeto"
-version = "1.0.2"
+version = "1.0.3"
 authors = [
   { name="Andrei Sukhanov", email="cyxandr@gmail.com" },
 ]
-description = "Spreadsheet view of process variables from EPICS or liteServers"
+description = "Tabular control of process variables from EPICS or liteServers"
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
