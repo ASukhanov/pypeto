@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v2.0.0 2025-04-28'# 
+__version__= 'v2.0.1 2025-04-29'# tabbed version with empty tab
 #TODO: embedding works on Raspberry and Lubuntu but not on RedHat
 
 import os, threading, subprocess, sys, time, math
@@ -14,6 +14,8 @@ import traceback
 from functools import partial
 import builtins # for "Monkey patching" of pypages
 from os import system as os_system, environ as os_environ
+
+from . import detachable_tabs
 
 try:    Browser = os_environ["BROWSER"]
 except: Browser = 'firefox'
@@ -495,6 +497,12 @@ class Window(QW.QMainWindow):
 
         self.load_table()
 
+        self.tabWidget = detachable_tabs.DetachableTabWidget()
+        self.setCentralWidget(self.tabWidget)
+        self.tabWidget.addTab(self.table, 'Tab1')
+        tab2 = QW.QLabel('Test Widget 2')
+        self.tabWidget.addTab(tab2, 'Tab2')
+
         exitItem = QW.QAction("E&xit", self\
         , triggered = self.closeEvent)
         fileMenu.addAction(exitItem)
@@ -606,7 +614,7 @@ class Window(QW.QMainWindow):
         self._process_daTable(rows,columns)
         #print(',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,')
         self.table.cellClicked.connect(self.handleCellClicked)        
-        self.setCentralWidget(self.table)
+        #self.setCentralWidget(self.table)
         if pargs.hidemenubar:
             self.hide_menuBar()
         self.fitToTable()
@@ -651,7 +659,7 @@ class Window(QW.QMainWindow):
         try:    defaultColor = Spreadsheet.ConfigModule._Page['color']
         except: defaultColor = 'white'
         for row in range(rows):
-          self.table.setRowHeight(row,20)
+          self.table.setRowHeight(row,20)# This setting has no effect, even for height=1
           #try:  
           #  if Window.daTable.pos2obj[(row,0)][0] is None:
           #          continue
