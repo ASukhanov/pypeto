@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v1.0.3 2025-04-26'# editor is launched using xdg-open
+__version__= 'v2.0.0 2025-04-28'# 
 #TODO: embedding works on Raspberry and Lubuntu but not on RedHat
 
 import os, threading, subprocess, sys, time, math
