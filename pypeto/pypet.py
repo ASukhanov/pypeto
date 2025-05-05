@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v2.0.1 2025-04-29'# tabbed version with empty tab
+__version__= 'v2.0.2 2025-05-05'#  Spreadsheet.CurrentPage
 #TODO: embedding works on Raspberry and Lubuntu but not on RedHat
 
 import os, threading, subprocess, sys, time, math
@@ -141,7 +141,7 @@ def pvplot(devPars, plotType=None, dialog=None):
 
 def get_namespace():
     """Retrieve namespace (EPICS, PVA or LITE from configuation"""
-    try:    ns = Spreadsheet.ConfigModule._Namespace
+    try:    ns = Spreadsheet.CurrentPage.namespace
     except: ns = None
     #printv(f'config namespace: {ns}')
     if ns is None:
@@ -541,7 +541,7 @@ class Window(QW.QMainWindow):
         , triggered = wikiMenuAct)
         helpMenu.addAction(wikiMenu)
         try:
-            pageHelp = Spreadsheet.ConfigModule._PageHelp
+            pageHelp = Spreadsheet.CurrentPage.pageHelp
             helpMenu.addSeparator()
             def pageHelpAct():
                 os_system(f'{Browser} {pageHelp}')
@@ -561,7 +561,7 @@ class Window(QW.QMainWindow):
             title = 'snapShot'+pf
         else:
             try:
-                title = Spreadsheet.ConfigModule._WindowTitle
+                title = Spreadsheet.CurrentPage.title
             except:
                 title = f'{AppName}'+pf
         self.setWindowTitle(title)
@@ -602,8 +602,7 @@ class Window(QW.QMainWindow):
         self.table.setSizeAdjustPolicy(
             QW.QAbstractScrollArea.AdjustToContents)
         self.table.verticalHeader().setVisible(True)
-        #self.columnAttributes = Spreadsheet.ConfigModule.get('columns')
-        try:    self.columnAttributes = Spreadsheet.ConfigModule._Columns
+        try:    self.columnAttributes = Spreadsheet.CurrentPage.columns
         except Exception as e:
             printw(f'exception with columnAttributes {e}')
             self.columnAttributes = {}
@@ -656,7 +655,7 @@ class Window(QW.QMainWindow):
     def _process_daTable(self,rows,columns):
         """Part of the load_table. Build par2objAndPos from pos2obj"""
         #print('>_process_daTable}')
-        try:    defaultColor = Spreadsheet.ConfigModule._Page['color']
+        try:    defaultColor = Spreadsheet.CurrentPage.page['color']
         except: defaultColor = 'white'
         for row in range(rows):
           self.table.setRowHeight(row,20)# This setting has no effect, even for height=1
@@ -1241,7 +1240,7 @@ class Window(QW.QMainWindow):
             row.append({txt:attr})
             #except Exception as e:
             #    printe(f'in save_snapshot:{e}')
-        try:    namespace = Spreadsheet.ConfigModule._Namespace
+        try:    namespace = Spreadsheet.CurrentPage.namespace
         except: namespace = DefaultNamespace
         content = f"_Namespace = '{namespace}'\n"
         content += f'_Columns = {self.columnAttributes}\n'
@@ -1660,7 +1659,7 @@ class DataAccess():
     def is_editable(self):
         #printv(croppedText(f"is_ed {self.name}\n{self.attr}"))
         try:
-            page_is_editable = Spreadsheet.ConfigModule._Page['editable']
+            page_is_editable = Spreadsheet.CurrentPage.page['editable']
         except Exception as e:
             page_is_editable = True
         if not page_is_editable:
@@ -1749,6 +1748,7 @@ class DataAccess_ado(DataAccess):
 class Spreadsheet():
     """DataAccess table maps: parameter to (row,col) and (row,col) to object"""
     ConfigModule = None
+    CurrentPage = None
 
     def __init__(self, moduleFile):
         self.par2objAndPos = {}# map of {parameterName:dataAccessObject,[(row,col),vslice]}
@@ -1779,8 +1779,13 @@ class Spreadsheet():
         except ModuleNotFoundError as e:
             printe(f'Trying to import {configDir}{moduleFile}.py: {e}')
             sys.exit(0)
-        try:    rows = Spreadsheet.ConfigModule._Rows
-        except:
+        Spreadsheet.CurrentPage = Spreadsheet.ConfigModule.Page()
+        if True:#try:
+            #rows = Spreadsheet.ConfigModule._Rows
+            rows = Spreadsheet.CurrentPage.rows
+            title = Spreadsheet.CurrentPage.title
+            print(f'title: {title}')
+        else:#except:
             printe('No entry "_Rows" in the config file')
             sys.exit(0)
         printi(f'Imported: {Spreadsheet.ConfigModule.__file__}')
