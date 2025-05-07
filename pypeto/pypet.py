@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Spreadsheet view of process variables from EPICS or liteServers"""
-__version__= 'v2.0.2 2025-05-05'#  Spreadsheet.CurrentPage
+"""DaTable view of process variables from EPICS or liteServers"""
+__version__= 'v3.0.0 2025-05-06'# major re-factoring. Single tab OK. 
 #TODO: embedding works on Raspberry and Lubuntu but not on RedHat
+#TODO: If connection is restored, subscribtion times out
+"""tests: 
+python -m pypeto -c ../fallback -f peakSimPlot1
+"""
 
 import os, threading, subprocess, sys, time, math
 timer = time.perf_counter
@@ -139,15 +143,15 @@ def pvplot(devPars, plotType=None, dialog=None):
     subprocess.Popen(subprocCmd, stdout=subprocess.PIPE)
     if dialog:  dialog.accept()
 
-def get_namespace():
+def get_namespace(pypage):
     """Retrieve namespace (EPICS, PVA or LITE from configuation"""
-    try:    ns = Spreadsheet.CurrentPage.namespace
+    try:    ns = pypage.namespace
     except: ns = None
-    #printv(f'config namespace: {ns}')
+    #print(f'get_namespace: {ns}')
     if ns is None:
         ns = pargs.access
     ns = ns.upper()
-    if ns[:4] == 'LITE': ns = 'LITE'
+    #?if ns[:4] == 'LITE': ns = 'LITE'
     return ns
 
 def rgbColorCode(text):
@@ -367,7 +371,7 @@ class QPushButtonCmd(QW.QPushButton):
         Win.update_statusBar(msg)
         p = subprocess.Popen(self.cmd, stdout=subprocess.PIPE, shell=True)
 
-class myTableWidget(QW.QTableWidget):
+class MyTableWidget(QW.QTableWidget):
     """Modified QTableWidget"""
     def mousePressEvent(self,*args):
         button = args[0].button()
@@ -378,7 +382,7 @@ class myTableWidget(QW.QTableWidget):
             return
         if button == 2: # right button
             try:
-                dao = Window.daTable.pos2obj[(row,col)][0]
+                self.daTable.pos2obj[(row,col)][0]
                 #print( f'rclick{row,col}')
                 if issubclass(type(dao),DataAccess):
                     #printv(f'RightClick at DAO {dao.name}')
@@ -388,6 +392,9 @@ class myTableWidget(QW.QTableWidget):
                 pass
         else:
             super().mousePressEvent(*args)
+
+    def set_daTable(self, daTable):
+        self.daTable = daTable
 
 class QSliderDAO(QW.QSlider):
     """Slider associated with the Data Access Object"""
@@ -450,7 +457,8 @@ class Window(QW.QMainWindow):
     """Main window"""
     bottomLine = None
     InitializationFinished = False
-    daTable = None
+    tabWidget = None
+    daTables = []
 
     def __init__(self):
         QW.QWidget.__init__(self)
@@ -497,11 +505,13 @@ class Window(QW.QMainWindow):
 
         self.load_table()
 
-        self.tabWidget = detachable_tabs.DetachableTabWidget()
-        self.setCentralWidget(self.tabWidget)
-        self.tabWidget.addTab(self.table, 'Tab1')
+        Window.tabWidget = detachable_tabs.DetachableTabWidget()
+        print(f'tabWidget created')
+        self.setCentralWidget(Window.tabWidget)
+        print(f'self.tableWidget: {self.tableWidget}')
+        Window.tabWidget.addTab(self.tableWidget, self.tableWidget.daTable.pypage.title)
         tab2 = QW.QLabel('Test Widget 2')
-        self.tabWidget.addTab(tab2, 'Tab2')
+        Window.tabWidget.addTab(tab2, 'Tab2')
 
         exitItem = QW.QAction("E&xit", self\
         , triggered = self.closeEvent)
@@ -541,7 +551,7 @@ class Window(QW.QMainWindow):
         , triggered = wikiMenuAct)
         helpMenu.addAction(wikiMenu)
         try:
-            pageHelp = Spreadsheet.CurrentPage.pageHelp
+            pageHelp = self.tableWidget.daTable.pypage.pageHelp
             helpMenu.addSeparator()
             def pageHelpAct():
                 os_system(f'{Browser} {pageHelp}')
@@ -561,7 +571,7 @@ class Window(QW.QMainWindow):
             title = 'snapShot'+pf
         else:
             try:
-                title = Spreadsheet.CurrentPage.title
+                title = self.tableWidget.daTable.currentPage.title
             except:
                 title = f'{AppName}'+pf
         self.setWindowTitle(title)
@@ -593,27 +603,29 @@ class Window(QW.QMainWindow):
     def load_table(self):
         """Load table from saved snapshot"""
         # read config file
-        try:    del Window.daTable
-        except: pass
-        Window.daTable = Spreadsheet(pargs.file)
-        rows, columns = Window.daTable.shape
-        self.table = myTableWidget(rows, columns, self)
-        self.table.setShowGrid(False)
-        self.table.setSizeAdjustPolicy(
+        #try:    del Window.daTable
+        #except: pass
+        daTable = DaTable(pargs.file)
+        Window.daTables.append(daTable)
+
+        self.tableWidget = MyTableWidget(*daTable.shape, self)
+        self.tableWidget.set_daTable(daTable)
+        self.tableWidget.setShowGrid(False)
+        self.tableWidget.setSizeAdjustPolicy(
             QW.QAbstractScrollArea.AdjustToContents)
-        self.table.verticalHeader().setVisible(True)
-        try:    self.columnAttributes = Spreadsheet.CurrentPage.columns
+        self.tableWidget.verticalHeader().setVisible(True)
+        try:    self.columnAttributes = self.tableWidget.daTable.pypage.columns
         except Exception as e:
             printw(f'exception with columnAttributes {e}')
             self.columnAttributes = {}
-        #self.table.setAlternatingRowColors(True)
-        #self.table.setStyleSheet("alternate-background-color: red; background: lightGrey; color: #6b6d7b; ")
+        #self.tableWidget.setAlternatingRowColors(True)
+        #self.tableWidget.setStyleSheet("alternate-background-color: red; background: lightGrey; color: #6b6d7b; ")
 
-        #print('```````````````````````Processing table`````````````````````')
-        self._process_daTable(rows,columns)
-        #print(',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,')
-        self.table.cellClicked.connect(self.handleCellClicked)        
-        #self.setCentralWidget(self.table)
+        printv('```````````````````````Processing table`````````````````````')
+        self._process_daTable(daTable)
+        printv(',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,')
+        self.tableWidget.cellClicked.connect(self.handleCellClicked)        
+        #self.setCentralWidget(self.tableWidget)
         if pargs.hidemenubar:
             self.hide_menuBar()
         self.fitToTable()
@@ -621,7 +633,8 @@ class Window(QW.QMainWindow):
 
     def edit_table(self):
         """Edit page file externally"""
-        cmd = f'xdg-open {Spreadsheet.ConfigModule.__file__}'
+        daTable = Window.tabWidget.currentWidget().daTable
+        cmd = f'xdg-open {daTable.configModule.__file__}'
         printi(f'executing: {cmd}')
         subprocess.Popen(cmd.split())
 
@@ -636,43 +649,44 @@ class Window(QW.QMainWindow):
         os_system(cmd)
     
     def fitToTable(self):
-        x = self.table.verticalHeader().size().width()
-        for i in range(self.table.columnCount()):
-            x += self.table.columnWidth(i)
+        x = self.tableWidget.verticalHeader().size().width()
+        for i in range(self.tableWidget.columnCount()):
+            x += self.tableWidget.columnWidth(i)
 
-        #y = self.table.horizontalHeader().size().height()*4
+        #y = self.tableWidget.horizontalHeader().size().height()*4
         y = 0
-        for i in range(self.table.rowCount()):
-            y += self.table.rowHeight(i)+2
+        for i in range(self.tableWidget.rowCount()):
+            y += self.tableWidget.rowHeight(i)+2
         #self.setFixedSize(x, y)
-        #print(f'rows {self.table.rowCount(),x,y}')
+        #print(f'rows {self.tableWidget.rowCount(),x,y}')
         self.resize(x,y)
 
     def update_statusBar(self,msg):
         #print(f'update_statusBar:{msg}')
         self.statusBar().showMessage(msg)
 
-    def _process_daTable(self,rows,columns):
+    def _process_daTable(self, daTable):
         """Part of the load_table. Build par2objAndPos from pos2obj"""
+        rows, columns = daTable.shape
         #print('>_process_daTable}')
-        try:    defaultColor = Spreadsheet.CurrentPage.page['color']
+        try:    defaultColor = daTable.pypage['color']
         except: defaultColor = 'white'
         for row in range(rows):
-          self.table.setRowHeight(row,20)# This setting has no effect, even for height=1
+          self.tableWidget.setRowHeight(row,20)# This setting has no effect, even for height=1
           #try:  
-          #  if Window.daTable.pos2obj[(row,0)][0] is None:
+          #  if daTable.pos2obj[(row,0)][0] is None:
           #          continue
           #except:   continue
           for col in range(columns):
-            try: obj,cellAttribute = Window.daTable.pos2obj[(row,col)]
+            try: obj,cellAttribute = daTable.pos2obj[(row,col)]
             except Exception as e:
-                #printv('Not an object,{}:'+str(e))
+                printv(f'Not an object @{row,col}: {e}')
                 continue
             if col == 0:
                 #print(f'col0: row{row} {cellAttribute}' )
                 height = cellAttribute.get('height')
                 if height is not None:
-                    self.table.setRowHeight(row,height)
+                    self.tableWidget.setRowHeight(row,height)
 
             for attribute,value in cellAttribute.items():
                 #if pargs.verbose: #printv(croppedText(f'handle cellAttributes{row,col}:{attribute,value}'))
@@ -680,7 +694,7 @@ class Window(QW.QMainWindow):
                     try: spanCol,spanRow = value
                     except: spanRow,spanCol = 1,value
                     #print(f'merging {value} cells starting at {row,col}')
-                    self.table.setSpan(row,col,spanRow,spanCol)
+                    self.tableWidget.setSpan(row,col,spanRow,spanCol)
 
             if obj is None:
                 continue
@@ -710,9 +724,9 @@ class Window(QW.QMainWindow):
                     cellAttribute['widget'] = gt
 
             # store a list of row,col's as the same object may be addressed from several cells
-            entry = Window.daTable.par2objAndPos.get(dataAccess.name)
+            entry = daTable.par2objAndPos.get(dataAccess.name)
             if entry is None:
-                Window.daTable.par2objAndPos[dataAccess.name] = (dataAccess, [((row,col),vslice)])
+                daTable.par2objAndPos[dataAccess.name] = (dataAccess, [((row,col),vslice)])
             else:
                 entry[1].append(((row,col),vslice))
 
@@ -725,9 +739,9 @@ class Window(QW.QMainWindow):
                 
             # deduct the cell type from DAO
             self.set_tableItem(row, col, item, cellAttribute, dataAccess)
-        #printv(croppedText(f'par2objAndPos: {Window.daTable.par2objAndPos}'))
-        self.table.resizeColumnsToContents()
-        #self.table.setColumnWidth(0,60)
+        #printv(croppedText(f'par2objAndPos: {daTable.par2objAndPos}'))
+        self.tableWidget.resizeColumnsToContents()
+        #self.tableWidget.setColumnWidth(0,60)
         if self.columnAttributes:
             try:
                 #print(f'columnAttributes:{self.columnAttributes}')
@@ -736,15 +750,15 @@ class Window(QW.QMainWindow):
                     if not width:
                         continue
                     #printv(f'setting columnWidth{type(column),column-1,type(width),width}')
-                    self.table.setColumnWidth(column-1, width)
+                    self.tableWidget.setColumnWidth(column-1, width)
             except Exception as e:
                 printe(f'wrong ColumnWidths: {column,width}')
-        self.table.horizontalHeader().setVisible(False)
-        self.table.verticalHeader().setVisible(False)
+        self.tableWidget.horizontalHeader().setVisible(False)
+        self.tableWidget.verticalHeader().setVisible(False)
 
     def update_headers(self):
-        self.table.horizontalHeader().setVisible(self.tableHeaders.isChecked())
-        self.table.verticalHeader().setVisible(self.tableHeaders.isChecked())
+        self.tableWidget.horizontalHeader().setVisible(self.tableHeaders.isChecked())
+        self.tableWidget.verticalHeader().setVisible(self.tableHeaders.isChecked())
 
     def hide_menuBar(self):
         self.menuBar().setVisible(False)
@@ -854,7 +868,7 @@ class Window(QW.QMainWindow):
                 pbutton.setStyleSheet(f'background-color:{bgColor}')
                 if font:
                     pbutton.setFont(font)
-                self.table.setCellWidget(row, col, pbutton)
+                self.tableWidget.setCellWidget(row, col, pbutton)
                 continue
             elif attribute == 'widget':
                 isItemWidget = True
@@ -907,7 +921,7 @@ class Window(QW.QMainWindow):
                     widget.setToolTip(description)
                 if bgColor is not None:
                     widget.setStyleSheet(f'background-color:{bgColor}')
-                self.table.setCellWidget(row, col, widget)
+                self.tableWidget.setCellWidget(row, col, widget)
             elif attribute == 'embed':
                 isItemWidget = True
                 self.embed(row, col, value)
@@ -920,7 +934,7 @@ class Window(QW.QMainWindow):
             
         #printv('setting item(%i,%i): '%(row,col)+str(item))
         if not isItemWidget:
-            self.table.setItem(row, col, item)
+            self.tableWidget.setItem(row, col, item)
             if description is not None:
                 item.setToolTip(description)
 
@@ -950,12 +964,12 @@ class Window(QW.QMainWindow):
         print(f'Cell DoubleClicked {x,y}')
 
     def handleCellClicked(self, row,column):
-        item = self.table.item(row,column)
+        item = self.tableWidget.item(row,column)
         #print(f'Cell clicked {row,column}')
 
     def update(self,a):
         #printv('window update',a)
-        tableItem = self.table.item(2,1)
+        tableItem = self.tableWidget.item(2,1)
         try:
             tableItem.setText(str(a[0]))
         except Exception as e:
@@ -968,7 +982,7 @@ class Window(QW.QMainWindow):
         #d.setIcon(QW.QMessageBox.Information)
         d.setStandardButtons(QW.QMessageBox.Cancel)#QW.QMessageBox.Ok)# | )
         devPar = dataAccess.name
-        #print(f'selected items:{self.table.selectedItems()}')
+        #print(f'selected items:{self.tableWidget.selectedItems()}')
         d.setWindowTitle(f'Info on {devPar}')
         #d.setText(f'Click Show Details to view attributres of \n{devPar}')
         description = attributes.get('desc','')
@@ -1000,7 +1014,7 @@ class Window(QW.QMainWindow):
             #print(f'pvplot {devPar}, {vslice}')
             if dataAccess.vslice is not None:
                 devPar += f'[{vslice[0]}:{vslice[1]}]'
-            if len(self.table.selectedItems()) == 0:
+            if len(self.tableWidget.selectedItems()) == 0:
                 btPlot.clicked.connect(partial(pvplot, [devPar], plotType, d))
             else:
                 btPlot.clicked.connect(self.plot_selectedAdopars)
@@ -1018,9 +1032,11 @@ class Window(QW.QMainWindow):
         if t - self.heartBeatTime < 10.:
             return
         self.heartBeatTime = t
-        #print('>heartbeat')
         #TODO: execute info on all devices
-        namespace = get_namespace()
+        printv(f'>heartBeat')
+        daTable = Window.tabWidget.currentWidget().daTable
+        namespace = get_namespace(daTable.pypage)
+        #print(f'>heartbeat namespace: {namespace}')
         if namespace is None: namespace = DefaultNamespace
         if namespace == 'ADO':
             parName = 'version'
@@ -1033,10 +1049,12 @@ class Window(QW.QMainWindow):
             printe(f'Not supported namespace: {namespace}')
             return
 
-        for devName,daoDict in Window.daTable.deviceMap.items():
+        daTable = Window.tabWidget.currentWidget().daTable
+
+        for devName,daoDict in daTable.deviceMap.items():
             dao = list(daoDict.values())
             firstDevPar = dao[0].devPar
-            #print(f'devName, devPar: {devName,firstDevPar}')
+            #print(f'HB, devName, devPar: {devName,firstDevPar}')
             try:
                 access = dao[0].Access
                 # check if device is alive
@@ -1049,25 +1067,25 @@ class Window(QW.QMainWindow):
                 if devName in self.lostConnections:
                     printw(f'Heartbeat on {devName} is recovered')
                     self.lostConnections.remove(devName)
-                    self.connectionRecovered(devName)
+                    self.connectionRecovered(devName, daTable)
             except Exception as e:
                 if not devName in self.lostConnections:
                     printw(f'No heartbeat from {devName}: {e}')
                     self.lostConnections.add(devName)
-                    self.connectionLost(devName)                        
+                    self.connectionLost(devName, daTable)                        
         #printvv('<heartbeat')
 
-    def connectionLost(self,host):
+    def connectionLost(self, host, daTable):
         printw(f'Lost connection to {host}')
-        for devPar,ObjAndPos in Window.daTable.par2objAndPos.items():
+        for devPar,ObjAndPos in daTable.par2objAndPos.items():
             dev,par = devPar.rsplit(':',1)
             obj,rowCols = ObjAndPos
             if dev == host:
                 #print(f'paint it pink: {rowCols}')
                 for rowColSlice in rowCols:
                     rowCol,vslice = rowColSlice
-                    item = self.table.item(*rowCol)
-                    widget = self.table.cellWidget(*rowCol)
+                    item = self.tableWidget.item(*rowCol)
+                    widget = self.tableWidget.cellWidget(*rowCol)
                     #print(f'item: {item}, widget:{widget}')
                     if widget:
                         #print(f'widget at {rowCol} color:{widget.style()}')
@@ -1075,17 +1093,17 @@ class Window(QW.QMainWindow):
                     else:
                         item.setBackground(QtGui.QColor('pink'))
 
-    def connectionRecovered(self, host):
+    def connectionRecovered(self, host, daTable):
         printw(f'Connection to {host} is restored')
-        for devPar,ObjAndPos in Window.daTable.par2objAndPos.items():
+        for devPar,ObjAndPos in daTable.par2objAndPos.items():
             dev,par = devPar.rsplit(':',1)
             obj,rowCols = ObjAndPos
             if dev == host:
                 #print(f'paint it white: {rowCols}')
                 for rowColSlice in rowCols:
                     rowCol,vslice = rowColSlice
-                    item = self.table.item(*rowCol)
-                    widget = self.table.cellWidget(*rowCol)
+                    item = self.tableWidget.item(*rowCol)
+                    widget = self.tableWidget.cellWidget(*rowCol)
                     if widget:
                         widget.setStyleSheet('background-color:white')
                     else:
@@ -1132,12 +1150,12 @@ class Window(QW.QMainWindow):
         embed_window = QtGui.QWindow.fromWinId(winid)
         embed_widget = QW.QWidget.createWindowContainer(embed_window,
           self)#, QtCore.Qt.FramelessWindowHint)
-        self.table.setCellWidget(row, col, embed_widget)
+        self.tableWidget.setCellWidget(row, col, embed_widget)
         self.embedTimer.stop()
 
     def plot_selectedAdopars(self, plotType=None):
         devPars = []
-        selecteItems = self.table.selectedItems()
+        selecteItems = self.tableWidget.selectedItems()
         for item in selecteItems:
             row,col = item.row(), item.column()
             dao = Window.daTable.pos2obj[(row,col)][0]
@@ -1186,6 +1204,8 @@ class Window(QW.QMainWindow):
             printe('in check_path '+path+' error: '+str(e))
 
     def save_snapshot(self):
+        printe('save_snapshot needs repaair')
+        return
         snapshotDir = self.get_snapshotDirectory()
         Window.check_path(snapshotDir)
         # module name cannot have dots in the name
@@ -1240,7 +1260,7 @@ class Window(QW.QMainWindow):
             row.append({txt:attr})
             #except Exception as e:
             #    printe(f'in save_snapshot:{e}')
-        try:    namespace = Spreadsheet.CurrentPage.namespace
+        try:    namespace = DaTable.CurrentPage.namespace
         except: namespace = DefaultNamespace
         content = f"_Namespace = '{namespace}'\n"
         content += f'_Columns = {self.columnAttributes}\n'
@@ -1288,7 +1308,7 @@ class Window(QW.QMainWindow):
     #    print(f'>load_snapshot')
 
     def restore_parameters(self):
-        selectedParameters = self.table.selectedItems()
+        selectedParameters = self.tableWidget.selectedItems()
         printi(f'selectedPPars:{selectedParameters}')
         for item in selectedParameters:
             row,col = item.row(), item.column()
@@ -1308,7 +1328,7 @@ class Window(QW.QMainWindow):
             #print(f'restore {devPar, val}')
             #r = Access.set(parName.rsplit(':',1) + [val])
             r = dao.Access.set(list(devPar) + [val])
-            widget = self.table.cellWidget(row,col)
+            widget = self.tableWidget.cellWidget(row,col)
             widget.setStyleSheet(StyleSheet_lightBackground)
         except Exception as e:
             printw(f'in restore_parameter:{e}')
@@ -1319,11 +1339,12 @@ def MySlot(listOfParNames):
   """
   with Process_data_Lock:
     #print(f'>MySlot received event: {listOfParNames}')
+    daTable = Window.tabWidget.currentWidget().daTable
     if listOfParNames is None:
-        daRowCols = Window.daTable.par2objAndPos.values()
+        daRowCols = daTable.par2objAndPos.values()
     else:
-        daRowCols = [Window.daTable.par2objAndPos[i] for i in  listOfParNames] 
-    mainWidget = Win.table
+        daRowCols = [daTable.par2objAndPos[i] for i in  listOfParNames] 
+    mainWidget = Win.tableWidget
     errMsg = ''
     if DataAccessMonitor.Perf: ts = timer()
     for da,rowCols in daRowCols:
@@ -1389,7 +1410,7 @@ def MySlot(listOfParNames):
             else:
                 val = val[0]
                 #printv('DAO '+da.name+' is '+str(type(val)))
-                obj,cellAttr = Window.daTable.pos2obj[rowCol]
+                obj,cellAttr = daTable.pos2obj[rowCol]
                 fmt = cellAttr.get('format')
                 txt = v2t(val, fmt=fmt)
                 units = da.attr.get('units')
@@ -1442,7 +1463,9 @@ class DAM(QtCore.QThread):
         """
         self._stop()
         if len(self.hostDAOs) == 0:
-            self.hostDAOs = Window.daTable.deviceMap
+            daTable = Window.tabWidget.currentWidget().daTable
+            #print(f'setup_dataDelivery: {daTable.deviceMap}')
+            self.hostDAOs = daTable.deviceMap
         #print(f'hostDAOs: {self.hostDAOs}')
         self.pollingInterval = DataDeliveryModes[modeTxt]
         func = {'Asyn':self._setup_asyncDelivery,
@@ -1565,12 +1588,14 @@ class DAM(QtCore.QThread):
             def append_da(hostDevPar, valDict):
                 #if pargs.verbose: printv(croppedText(f'par,valDict:{hostDevPar,valDict}'))
                 try:
-                    dataAccess = Window.daTable.par2objAndPos[hostDevPar][0]
+                    daTable = Window.tabWidget.currentWidget().daTable
+                    dataAccess = daTable.par2objAndPos[hostDevPar][0]
                     dataAccess.currentValue = valDict
                     dataAccess.attr['value'] = valDict
                     da.append(hostDevPar)
-                except:
-                    printe(f'in append_da {hostDevPar, valDict}')
+                except Exception as e:
+                    printe(f'in append_da {hostDevPar, valDict}: {e}')
+                    return
 
             if isinstance(hostDevParTuple,tuple):
                 hostDevPar = ':'.join(hostDevParTuple)
@@ -1659,7 +1684,7 @@ class DataAccess():
     def is_editable(self):
         #printv(croppedText(f"is_ed {self.name}\n{self.attr}"))
         try:
-            page_is_editable = Spreadsheet.CurrentPage.page['editable']
+            page_is_editable = DaTable.CurrentPage.page['editable']
         except Exception as e:
             page_is_editable = True
         if not page_is_editable:
@@ -1745,15 +1770,13 @@ class DataAccess_ado(DataAccess):
         sys.exit(1)
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #``````````````````Data access table``````````````````````````````````````````
-class Spreadsheet():
+class DaTable():
     """DataAccess table maps: parameter to (row,col) and (row,col) to object"""
-    ConfigModule = None
-    CurrentPage = None
-
     def __init__(self, moduleFile):
         self.par2objAndPos = {}# map of {parameterName:dataAccessObject,[(row,col),vslice]}
         self.pos2obj = {}#      map of {(row,col):dataAccessObject}
         self.deviceMap = {}#    map of {deviceName:[dataAccessObject,...]}
+        self.configModule = None
         maxcol = 0
         configDir = pargs.configDir
 
@@ -1770,25 +1793,25 @@ class Spreadsheet():
             sys.exit(0)
         
         try:
-            if Spreadsheet.ConfigModule is not None:
-                Spreadsheet.ConfigModule = reload(Spreadsheet.ConfigModule)
+            if self.configModule is not None:
+                self.configModule = reload(self.configModule)
                 printi(f'Module {module} reloaded')
             else:
                 print(f'importing {module}')
-                Spreadsheet.ConfigModule = import_module(module)
+                self.configModule = import_module(module)
         except ModuleNotFoundError as e:
             printe(f'Trying to import {configDir}{moduleFile}.py: {e}')
             sys.exit(0)
-        Spreadsheet.CurrentPage = Spreadsheet.ConfigModule.Page()
+        self.pypage = self.configModule.pyPage
         if True:#try:
-            #rows = Spreadsheet.ConfigModule._Rows
-            rows = Spreadsheet.CurrentPage.rows
-            title = Spreadsheet.CurrentPage.title
+            #rows = self.configModule._Rows
+            rows = self.pypage.rows
+            title = self.pypage.title
             print(f'title: {title}')
         else:#except:
             printe('No entry "_Rows" in the config file')
             sys.exit(0)
-        printi(f'Imported: {Spreadsheet.ConfigModule.__file__}')
+        printi(f'Imported: {self.configModule.__file__}')
         #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
         dead_devices = set()
         def evaluate_string(key):
@@ -1801,7 +1824,7 @@ class Spreadsheet():
             di = {'L:':DataAccess_lite, 'E:':DataAccess_epics, 'P:':DataAccess_pva}.get(prefix)
             if di is None:
                 try:
-                    ns = get_namespace()
+                    ns = get_namespace(self.pypage)
                     di = {'LITE':DataAccess_lite, 'EPICS':DataAccess_epics,
                     'PVA':DataAccess_pva, 'ADO':DataAccess_ado}[ns]
                 except Exception as e:
@@ -1942,7 +1965,7 @@ class Spreadsheet():
             row += 1
 
         self.shape = row,maxcol
-        printv( f'table created, shape: {self.shape}')
+        printv( f'daTable created, shape: {self.shape}')
         #for key,value in self.pos2obj.items(): print(f'{key}:{value}')
         printv(croppedText(f'deviceMap:{self.deviceMap}'))
 
