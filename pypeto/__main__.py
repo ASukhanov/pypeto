@@ -19,8 +19,8 @@ def main():
       default = '/operations/app_store/pypet/pages/')
     parser.add_argument('-e','--dont_embed', action='store_true', help=\
       'Do not embed other applications') 
-    parser.add_argument('-f','--file', help=\
-      'Spreadsheet description page (python file with suffix _pp.py')
+    parser.add_argument('-f','--files', nargs='*', help=\
+      'Spreadsheet description pages (python files with suffix _pp.py in config directory')
     parser.add_argument('-g','--geometry', help=\
       'Relative position (x,y) of the window on the screen, e.g. -g0.2,0.5')
     parser.add_argument('-H','--hidemenubar',  action='store_true',  help=\
@@ -41,8 +41,8 @@ def main():
     parser.add_argument('-z', '--zoomin', help=\
       'Zoom the application window by a factor, factor must be >= 1')
     pargs = parser.parse_args()
-    if pargs.file is not None and pargs.device is not None:
-        printe('--file option is not allowed when a device argument is supplied.')
+    if pargs.files is not None and pargs.device is not None:
+        printe('--files option is not allowed when a device argument is supplied.')
         sys.exit(0)
     pypet.pargs = pargs
 

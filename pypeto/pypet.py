@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """DaTable view of process variables from EPICS or liteServers"""
-__version__= 'v3.0.0 2025-05-06'# major re-factoring. Single tab OK. 
+__version__= 'v3.0.1 2025-05-07'# parg.files, tested with one
 #TODO: embedding works on Raspberry and Lubuntu but not on RedHat
 #TODO: If connection is restored, subscribtion times out
 """tests: 
@@ -458,7 +458,7 @@ class Window(QW.QMainWindow):
     bottomLine = None
     InitializationFinished = False
     tabWidget = None
-    daTables = []
+    tableWidgets = []
 
     def __init__(self):
         QW.QWidget.__init__(self)
@@ -503,7 +503,7 @@ class Window(QW.QMainWindow):
             , triggered = self.restore_snapshot)
             fileMenu.addAction(restoreItem)
 
-        self.load_table()
+        self.load_tables()
 
         Window.tabWidget = detachable_tabs.DetachableTabWidget()
         print(f'tabWidget created')
@@ -566,7 +566,8 @@ class Window(QW.QMainWindow):
         self.lostConnections = set()
         self.widgetColor = {}
 
-        pf = '' if pargs.file is None else ' '+pargs.file
+        '''
+        pf = '' if pargs.files is None else ' '+pargs.files
         if pargs.restore:
             title = 'snapShot'+pf
         else:
@@ -574,7 +575,8 @@ class Window(QW.QMainWindow):
                 title = self.tableWidget.daTable.currentPage.title
             except:
                 title = f'{AppName}'+pf
-        self.setWindowTitle(title)
+        '''
+        self.setWindowTitle('pypet')
         #Win.resize(350, 300)
         self.screenGeometry = QW.QDesktopWidget().screenGeometry().getRect()
         self.show()
@@ -600,32 +602,32 @@ class Window(QW.QMainWindow):
         self.load_table()
         DataAccessMonitor.setup_dataDelivery(currentMode)
 
-    def load_table(self):
+    def load_tables(self):
         """Load table from saved snapshot"""
         # read config file
         #try:    del Window.daTable
         #except: pass
-        daTable = DaTable(pargs.file)
-        Window.daTables.append(daTable)
+        for f in pargs.files:
+            daTable = DaTable(f)
+            self.tableWidget = MyTableWidget(*daTable.shape, self)
+            self.tableWidget.set_daTable(daTable)
+            self.tableWidget.setShowGrid(False)
+            self.tableWidget.setSizeAdjustPolicy(
+                QW.QAbstractScrollArea.AdjustToContents)
+            self.tableWidget.verticalHeader().setVisible(True)
+            try:    self.columnAttributes = self.tableWidget.daTable.pypage.columns
+            except Exception as e:
+                printw(f'exception with columnAttributes {e}')
+                self.columnAttributes = {}
+            #self.tableWidget.setAlternatingRowColors(True)
+            #self.tableWidget.setStyleSheet("alternate-background-color: red; background: lightGrey; color: #6b6d7b; ")
 
-        self.tableWidget = MyTableWidget(*daTable.shape, self)
-        self.tableWidget.set_daTable(daTable)
-        self.tableWidget.setShowGrid(False)
-        self.tableWidget.setSizeAdjustPolicy(
-            QW.QAbstractScrollArea.AdjustToContents)
-        self.tableWidget.verticalHeader().setVisible(True)
-        try:    self.columnAttributes = self.tableWidget.daTable.pypage.columns
-        except Exception as e:
-            printw(f'exception with columnAttributes {e}')
-            self.columnAttributes = {}
-        #self.tableWidget.setAlternatingRowColors(True)
-        #self.tableWidget.setStyleSheet("alternate-background-color: red; background: lightGrey; color: #6b6d7b; ")
+            printv('```````````````````````Processing table`````````````````````')
+            self._process_daTable(daTable)
+            printv(',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,')
+            self.tableWidget.cellClicked.connect(self.handleCellClicked)
+            Window.tableWidgets.append(self.tableWidget)
 
-        printv('```````````````````````Processing table`````````````````````')
-        self._process_daTable(daTable)
-        printv(',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,')
-        self.tableWidget.cellClicked.connect(self.handleCellClicked)        
-        #self.setCentralWidget(self.tableWidget)
         if pargs.hidemenubar:
             self.hide_menuBar()
         self.fitToTable()
@@ -1180,6 +1182,8 @@ class Window(QW.QMainWindow):
         DataAccessMonitor.setup_dataDelivery(mode)
 
     def get_snapshotDirectory(self):
+        printw('TODO: get_snapshotDirectory need to be fixed')
+        return
         snapshotDir = pargs.configDir
         #printv(f'pargs.file:{pargs.file}, pargs.device:{pargs.device}')
         if pargs.file:
@@ -1204,7 +1208,7 @@ class Window(QW.QMainWindow):
             printe('in check_path '+path+' error: '+str(e))
 
     def save_snapshot(self):
-        printe('save_snapshot needs repaair')
+        printe('TODO: save_snapshot needs repair')
         return
         snapshotDir = self.get_snapshotDirectory()
         Window.check_path(snapshotDir)
@@ -1785,7 +1789,6 @@ class DaTable():
             ' local configuration will be build'))
             moduleFile = build_temporary_pvfile(pargs.device)
         #``````````read conguration file into the config dictionary```````````````
-        sys.path.append(configDir)
         from importlib import import_module, reload
         moduleFile = moduleFile.replace(configDir,'')
         module = moduleFile.replace('/','.')
@@ -2022,6 +2025,7 @@ def run():
     # Some consider this an example of "Monkey patching"
     global Win
     builtins.pypage_INSTANCE = pargs.instance
+    sys.path.append(pargs.configDir)
 
     # the --zoom should be handled prior to QtWidgets.QApplication
     for i,argv in enumerate(sys.argv):
@@ -2034,16 +2038,18 @@ def run():
             break
     qApp = QApplication([])
 
-    if pargs.file:
-        if pargs.file[-3:] != '_pp':
-            pargs.file += '_pp'
+    if pargs.files:
+        # add _pp suffix to filenames
+        for i,f in enumerate(pargs.files):
+            if pargs.files[i][-3:] != '_pp':
+                pargs.files[i] += '_pp'
     else:
         if not pargs.device:
-            pargs.file = select_file_interactively(pargs.configDir)
-            pargs.file.replace(pargs.configDir,'')
+            pargs.files = [select_file_interactively(pargs.configDir)]
+            pargs.files.replace(pargs.configDir,'')
             l = len(pargs.configDir)
-            if pargs.file[:l] == pargs.configDir:
-                pargs.file = pargs.file[l:]
+            if pargs.files[0][:l] == pargs.configDir:
+                pargs.files[0] = pargs.files[0][l:]
 
     # define GUI
     Win = Window()
@@ -2067,5 +2073,4 @@ def run():
         printi('keyboard interrupt: exiting')
     DataAccessMonitor.setup_dataDelivery('Stopped')
     EventExit.set()
-
 
