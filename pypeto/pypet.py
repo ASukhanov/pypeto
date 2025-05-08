@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """DaTable view of process variables from EPICS or liteServers"""
-__version__= 'v3.0.1 2025-05-07'# parg.files, tested with one
+__version__= 'v3.0.2 2025-05-08'# multiple tabWidgets
 #TODO: embedding works on Raspberry and Lubuntu but not on RedHat
 #TODO: If connection is restored, subscribtion times out
 """tests: 
-python -m pypeto -c ../fallback -f peakSimPlot1
+python -m pypeto -c test -f peakSimLocal
+python -m pypeto -c test -f peakSimLocal peakSimGlobal
 """
 
 import os, threading, subprocess, sys, time, math
@@ -508,10 +509,13 @@ class Window(QW.QMainWindow):
         Window.tabWidget = detachable_tabs.DetachableTabWidget()
         print(f'tabWidget created')
         self.setCentralWidget(Window.tabWidget)
-        print(f'self.tableWidget: {self.tableWidget}')
-        Window.tabWidget.addTab(self.tableWidget, self.tableWidget.daTable.pypage.title)
-        tab2 = QW.QLabel('Test Widget 2')
-        Window.tabWidget.addTab(tab2, 'Tab2')
+        #Window.tabWidget.addTab(self.tableWidget, self.tableWidget.daTable.pypage.title)
+        #tab2 = QW.QLabel('Test Widget 2')
+        #Window.tabWidget.addTab(tab2, 'Tab2')
+        for i,tableWidget in enumerate(Window.tableWidgets):
+            title = tableWidget.daTable.configModule.pyPage.title
+            print(f'Adding tab{i}: {title}')
+            Window.tabWidget.addTab(tableWidget, tableWidget.daTable.pypage.title)
 
         exitItem = QW.QAction("E&xit", self\
         , triggered = self.closeEvent)
@@ -1342,88 +1346,89 @@ def MySlot(listOfParNames):
   """Global redirector of the SignalSourceDataReady.
   """
   with Process_data_Lock:
-    #print(f'>MySlot received event: {listOfParNames}')
-    daTable = Window.tabWidget.currentWidget().daTable
+    printv(f'>MySlot received event: {listOfParNames}')
+    tableWidget = Window.tabWidget.currentWidget()
+    daTable = tableWidget.daTable
+    printv(f'daTable: {daTable.configModule.pyPage.title}')
     if listOfParNames is None:
         daRowCols = daTable.par2objAndPos.values()
     else:
         daRowCols = [daTable.par2objAndPos[i] for i in  listOfParNames] 
-    mainWidget = Win.tableWidget
     errMsg = ''
     if DataAccessMonitor.Perf: ts = timer()
-    for da,rowCols in daRowCols:
+    for datAccess,rowCols in daRowCols:
       for rowColSlice in rowCols:
-        #printv(f'dao {da.name}, rowColSlice: {rowColSlice}')
+        printv(f'dao {datAccess.name}, rowColSlice: {rowColSlice}')
         rowCol,vslice = rowColSlice
-        # da is DataAccess object, rowCol is (row,column)
+        # datAccess is DataAccess object, rowCol is (row,column)
         try:
-            currentValue = da.currentValue if vslice is None else\
-              da.currentValue[vslice[0]:vslice[1]]
+            currentValue = datAccess.currentValue if vslice is None else\
+              datAccess.currentValue[vslice[0]:vslice[1]]
         except:
-            #printw(f'currentValue not available for {da.name}')
+            #printw(f'currentValue not available for {datAccess.name}')
             continue
         #if pargs.verbose:#do not use #printv here, could be time consuming
-        #    print(croppedText(f'updating DA{rowColSlice}: {da.name, currentValue}'))
+        #    print(croppedText(f'updating DA{rowColSlice}: {datAccess.name, currentValue}'))
         try:
-            if 'R' not in da.attr['features']:
-                #print(f'not readable {da.name}')# cannot rely on this, many parameters are not properly marked
+            if 'R' not in datAccess.attr['features']:
+                #print(f'not readable {datAccess.name}')# cannot rely on this, many parameters are not properly marked
                 pass
         except: pass
-        if isinstance(da,str):
+        if isinstance(datAccess,str):
             printw('logic error')
             continue
         try:
-            #val = da.currentValue['v']# 'liteServer
+            #val = datAccess.currentValue['v']# 'liteServer
             val = [currentValue]
-            #printv('val:%s'%str(val)[:100])
+            printv('val:%s'%str(val)[:100])
             if val is None:
                 try:
-                    mainWidget.item(*rowCol).setText('none')
+                    tableWidget.item(*rowCol).setText('none')
                 except:  pass
                 continue
-            if da.guiType == 'spinbox':
-                #print('DAO '+da.name+' is spinbox '+str(val[0]))
+            if datAccess.guiType == 'spinbox':
+                #print('DAO '+datAccess.name+' is spinbox '+str(val[0]))
                 #try:    v = int(val[0])#DNW with QDoubleSpinBox
                 #except: v = float(val[0])
                 v = val[0]
                 if isinstance(v,(list,tuple)):
                     #printw('mySlot: spinbox value is iterable (lite issue)?')
                     v = v[0]
-                oldVal = mainWidget.cellWidget(*rowCol).value()
-                #print(f'spinbox {da.name} change from {oldVal} to {v}')
+                oldVal = tableWidget.cellWidget(*rowCol).value()
+                #print(f'spinbox {datAccess.name} change from {oldVal} to {v}')
                 if oldVal == v:
                     #print('no need to change spinbox')
                     continue
                 #try:       v = v[0]
                 #except:    pass
-                mainWidget.cellWidget(*rowCol).setValue(v)
+                tableWidget.cellWidget(*rowCol).setValue(v)
                 continue
-            elif da.guiType =='bool':
-                #printv('DAO '+da.name+' is bool')
-                state = mainWidget.item(*rowCol).checkState()
-                #printv('DAO '+da.name+' is bool = '+str(val)+', state:'+str(state))
+            elif datAccess.guiType =='bool':
+                #printv('DAO '+datAccess.name+' is bool')
+                state = tableWidget.item(*rowCol).checkState()
+                #printv('DAO '+datAccess.name+' is bool = '+str(val)+', state:'+str(state))
                 if val[0] != (state != 0):
                     #print('flip')
-                    mainWidget.item(*rowCol).setCheckState(val[0])
+                    tableWidget.item(*rowCol).setCheckState(val[0])
                 continue
 
             # get text presentation of the item 
             if len(val) > 1:
-                #printv('DAO '+da.name+' is list')
+                #printv('DAO '+datAccess.name+' is list')
                 txt = v2t(val)
             else:
                 val = val[0]
-                #printv('DAO '+da.name+' is '+str(type(val)))
+                #printv('DAO '+datAccess.name+' is '+str(type(val)))
                 obj,cellAttr = daTable.pos2obj[rowCol]
                 fmt = cellAttr.get('format')
                 txt = v2t(val, fmt=fmt)
-                units = da.attr.get('units')
+                units = datAccess.attr.get('units')
                 if units:
                     txt += ' '+units
 
-            widget =  mainWidget.cellWidget(*rowCol)
+            widget =  tableWidget.cellWidget(*rowCol)
             if not widget:
-                widget = mainWidget.item(*rowCol)
+                widget = tableWidget.item(*rowCol)
             widget.setText(txt)
             if isinstance(val, str):
                 try: widget.setBackground(QtGui.QColor(*rgbColorCode(txt)))#TODO:restore old color
@@ -1486,7 +1491,7 @@ class DAM(QtCore.QThread):
         self._stop_pollingDelivery()
 
     def _setup_asyncDelivery(self):
-        #print('>_setup_asyncDelivery')
+        print(f'>_setup_asyncDelivery {list(self.hostDAOs.keys())}')
         self._stop_pollingDelivery()
         #print(self.hostDAOs.items())
         for host,daoDict in self.hostDAOs.items():
@@ -1536,7 +1541,7 @@ class DAM(QtCore.QThread):
         time.sleep(.1)
 
     def _thread_proc(self):
-        printi(f'>thread_proc ------------------------------')
+        printi(f'>polling delivery thread ------------------------------')
         while not EventExit.is_set() and self.pollingInterval != 0.:
             # collect data from all hosts and fill daTable with data
             dataReceived = True
@@ -1549,7 +1554,7 @@ class DAM(QtCore.QThread):
                     printw(f'in _thread_proc: DAO disappeared')
                     self.pollingInterval = 0.
                     break
-                #printv(f'host,dao:{host,aggregatedDAO}')
+                #print(f'host,dao:{host,aggregatedDAO}')
                 if DAM.Perf: ts = timer()
                 devPars = [i.devPar for i in aggregatedDAO]
                 #printv(f'devPars: {devPars}')
@@ -1582,7 +1587,7 @@ class DAM(QtCore.QThread):
     def _process_data(self, devDict):
         # update GUI elements
         #print(f'got:\n{devDict}')
-        da = []
+        datAccess = []
         for hostDevParTuple,parDict in devDict.items():
             if hostDevParTuple == 'ppmuser':
                 continue
@@ -1596,7 +1601,7 @@ class DAM(QtCore.QThread):
                     dataAccess = daTable.par2objAndPos[hostDevPar][0]
                     dataAccess.currentValue = valDict
                     dataAccess.attr['value'] = valDict
-                    da.append(hostDevPar)
+                    datAccess.append(hostDevPar)
                 except Exception as e:
                     printe(f'in append_da {hostDevPar, valDict}: {e}')
                     return
@@ -1610,7 +1615,7 @@ class DAM(QtCore.QThread):
                 for par, pd in parDict.items():
                     hostDevPar = hostDev+':'+par
                     append_da(hostDevPar, pd['value'])
-        return da
+        return datAccess
 DataAccessMonitor = DAM()
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #``````````````````Data access object`````````````````````````````````````````
@@ -2051,7 +2056,7 @@ def run():
             if pargs.files[0][:l] == pargs.configDir:
                 pargs.files[0] = pargs.files[0][l:]
 
-    # define GUI
+    # Instantiate the GUI
     Win = Window()
 
     if pargs.restore:
