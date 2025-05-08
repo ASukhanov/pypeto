@@ -6,6 +6,7 @@ __version__= 'v3.0.2 2025-05-08'# multiple tabWidgets
 """tests: 
 python -m pypeto -c test -f peakSimLocal
 python -m pypeto -c test -f peakSimLocal peakSimGlobal
+python -m pypeto -c test -f peakSimLocal peakSimGlobal lclScaler
 """
 
 import os, threading, subprocess, sys, time, math
@@ -231,8 +232,8 @@ class QDoubleSpinBoxDAO(SpinBox):
 
     def do_action(self):
         locked = Process_data_Lock.locked()
-        idle = locked or DAM.currentDeliveryMode == 'Stopped'
-        #printv(f'data delivery: {DAM.currentDeliveryMode}')
+        idle = locked or DataAccessMonitor.currentDeliveryMode == 'Stopped'
+        #printv(f'data delivery: {DataAccessMonitor.currentDeliveryMode}')
         printv(f'>do_action {idle,locked,pargs.readonly,self.dao.name}')
         if idle:
             # do not execute set() during initialization.
@@ -284,7 +285,7 @@ class QComboBoxDAO(QW.QComboBox):
         self.lineEdit().setText(txt)
 
     def contextMenuEvent(self,event):
-        #print(f'RightClick at comboBox {self.dao.name}')
+        print(f'RightClick at comboBox {self.dao.name}')
         Win.rightClick(self.dao)
 
     def wheelEvent(self, event):
@@ -376,6 +377,7 @@ class MyTableWidget(QW.QTableWidget):
     """Modified QTableWidget"""
     def mousePressEvent(self,*args):
         button = args[0].button()
+        #print(f'mousePress: {button}')
         item = self.itemAt(args[0].pos())
         try:
             row,col = item.row(),item.column()
@@ -383,7 +385,7 @@ class MyTableWidget(QW.QTableWidget):
             return
         if button == 2: # right button
             try:
-                self.daTable.pos2obj[(row,col)][0]
+                dao = self.daTable.pos2obj[(row,col)][0]
                 #print( f'rclick{row,col}')
                 if issubclass(type(dao),DataAccess):
                     #printv(f'RightClick at DAO {dao.name}')
@@ -514,7 +516,7 @@ class Window(QW.QMainWindow):
         #Window.tabWidget.addTab(tab2, 'Tab2')
         for i,tableWidget in enumerate(Window.tableWidgets):
             title = tableWidget.daTable.configModule.pyPage.title
-            print(f'Adding tab{i}: {title}')
+            #print(f'Adding tab{i}: {title}')
             Window.tabWidget.addTab(tableWidget, tableWidget.daTable.pypage.title)
 
         exitItem = QW.QAction("E&xit", self\
@@ -543,6 +545,7 @@ class Window(QW.QMainWindow):
         for m in DataDeliveryModes:
             self.deliveryCombo.addItem(m)
         self.deliveryCombo.currentIndexChanged.connect(self.deliveryActionChanged)
+        self.deliveryCombo.view().pressed.connect(self.deliveryActionPressed)
         self.objectTest1 = QtCore.QObject()# self is necessary here
         deliveryAction = QW.QWidgetAction(self.objectTest1)
         deliveryAction.setDefaultWidget(self.deliveryCombo)
@@ -602,9 +605,9 @@ class Window(QW.QMainWindow):
         self.move(*xy)
 
     def reload_table(self):
-        currentMode = DataAccessMonitor.setup_dataDelivery('Stopped')# by some reason the __del__ is not always called in destructor
+        currentMode = dataAccessMonitor.setup_dataDelivery('Stopped')# by some reason the __del__ is not always called in destructor
         self.load_table()
-        DataAccessMonitor.setup_dataDelivery(currentMode)
+        dataAccessMonitor.setup_dataDelivery(currentMode)
 
     def load_tables(self):
         """Load table from saved snapshot"""
@@ -983,7 +986,7 @@ class Window(QW.QMainWindow):
             
     def rightClick(self, dataAccess):
         attributes = dataAccess.attr
-        #print(f'window. RightClick on {dataAccess.name}, attr:{attributes}')
+        #print(f'Window. RightClick on {dataAccess.name}, attr:{attributes}')
         d = QW.QMessageBox(self)
         #d.setIcon(QW.QMessageBox.Information)
         d.setStandardButtons(QW.QMessageBox.Cancel)#QW.QMessageBox.Ok)# | )
@@ -1181,9 +1184,16 @@ class Window(QW.QMainWindow):
         subprocess.Popen(['setHistory',devPar])
         if dialog:  dialog.accept()
 
-    def deliveryActionChanged(self,i):
+    def deliveryActionChanged(self,*_):
         mode = self.deliveryCombo.currentText()
-        DataAccessMonitor.setup_dataDelivery(mode)
+        print(f'deliveryActionChanged: {mode, DataAccessMonitor.currentDeliveryMode}')
+        dataAccessMonitor.setup_dataDelivery(mode)
+
+    def deliveryActionPressed(self,*_):
+        mode = self.deliveryCombo.currentText()
+        print(f'deliveryActionPressed: {mode}')
+        if mode == 'Stopped':
+            dataAccessMonitor.setup_dataDelivery(mode)
 
     def get_snapshotDirectory(self):
         printw('TODO: get_snapshotDirectory need to be fixed')
@@ -1355,7 +1365,7 @@ def MySlot(listOfParNames):
     else:
         daRowCols = [daTable.par2objAndPos[i] for i in  listOfParNames] 
     errMsg = ''
-    if DataAccessMonitor.Perf: ts = timer()
+    if dataAccessMonitor.Perf: ts = timer()
     for datAccess,rowCols in daRowCols:
       for rowColSlice in rowCols:
         printv(f'dao {datAccess.name}, rowColSlice: {rowColSlice}')
@@ -1438,12 +1448,12 @@ def MySlot(listOfParNames):
             printw(errMsg)
             print('Traceback: '+repr(traceback.format_exc()))
             break
-    if DataAccessMonitor.Perf: print('GUI update time: %.4f'%(timer()-ts))    
+    if dataAccessMonitor.Perf: print('GUI update time: %.4f'%(timer()-ts))    
     #printv(f'<MySlot processed data')
     if errMsg:  Win.update_statusBar('WRN: '+errMsg) #Issue, it could be long delay here
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #````````````````````````````Data provider````````````````````````````````````
-class DAM(QtCore.QThread):
+class DataAccessMonitor(QtCore.QThread):
     """Data provider. Class attributes:
     Perf:       enables performance monitoring if True.
     SignalSourceDataReady: signal that data ready from the source.
@@ -1470,33 +1480,42 @@ class DAM(QtCore.QThread):
         Polling 1 min:  polling with 1 min interval
         Stopped:        stop data delivery
         """
-        self._stop()
+        #print(f'>setup_dataDelivery {modeTxt}')
+        mode = modeTxt[:4]
+        if mode not in ['','Stop']:
+            #print('Calling _stop')
+            self._stop()
+        
         if len(self.hostDAOs) == 0:
-            daTable = Window.tabWidget.currentWidget().daTable
-            #print(f'setup_dataDelivery: {daTable.deviceMap}')
-            self.hostDAOs = daTable.deviceMap
+            for i,tableWidget in enumerate(Window.tableWidgets):
+                #print(f'Adding ado PVs for tab{i}')
+                daTable = tableWidget.daTable
+                #print(f'setup_dataDelivery: {daTable.deviceMap}')
+                self.hostDAOs.update(daTable.deviceMap)
         #print(f'hostDAOs: {self.hostDAOs}')
         self.pollingInterval = DataDeliveryModes[modeTxt]
         func = {'Asyn':self._setup_asyncDelivery,
                 'Poll':self._setup_pollingDelivery,
-                'Stop':self._stop}.get(modeTxt[:4])
+                'Stop':self._stop}.get(mode)
         if func:
             func()
-        previousMode = DAM.currentDeliveryMode
-        DAM.currentDeliveryMode = modeTxt
+        previousMode = DataAccessMonitor.currentDeliveryMode
+        DataAccessMonitor.currentDeliveryMode = modeTxt
         return previousMode
 
     def _stop(self):
+        #print('Call _stop_asyncDelivery from _stop')
         self._stop_asyncDelivery()
         self._stop_pollingDelivery()
 
     def _setup_asyncDelivery(self):
-        print(f'>_setup_asyncDelivery {list(self.hostDAOs.keys())}')
+        #print(f'>_setup_asyncDelivery {list(self.hostDAOs.keys())}')
         self._stop_pollingDelivery()
         #print(self.hostDAOs.items())
         for host,daoDict in self.hostDAOs.items():
             aggregatedDAO = list(daoDict.values())
             for dao in aggregatedDAO:
+                #print(f'_setup_asyncDelivery {dao}')
                 devPar = dao.devPar
                 try:
                     r = dao.Access.subscribe(self._callback, devPar)
@@ -1508,9 +1527,11 @@ class DAM(QtCore.QThread):
 
     def _stop_asyncDelivery(self):
         # cancell all subscriptions
+        #print(f'>_stop_asyncDelivery {list(self.hostDAOs.keys())}')
         for host,daoDict in self.hostDAOs.items():
             aggregatedDAO = list(daoDict.values())
             for dao in aggregatedDAO:
+                #print(f'_stop_asyncDelivery {dao}')
                 if isinstance(dao,str):
                     continue
                 try:
@@ -1522,16 +1543,17 @@ class DAM(QtCore.QThread):
         """Note. ADO provides data dictionary as args[0].
         But EPICS - all in kwargs."""
         with Process_data_Lock:
-            #printv(croppedText(f'>DAM.cb:{args,kwargs}'))
+            #printv(croppedText(f'>DataAccessMonitor.cb:{args,kwargs}'))
             if len(args) > 0:# ADO way
                 pars = self._process_data(args[0])
             if len(kwargs) > 0:
                 pars = self._process_data(kwargs)
-            #print(f'>DAM pars:{pars}')
+            #print(f'>DataAccessMonitor pars:{pars}')
             self.SignalSourceDataReady.emit(pars)
         
     def _setup_pollingDelivery(self):
         # start the receiving thread
+        #print('Call stop_asyncDelivery from setup_pollingDelivery')
         self._stop_asyncDelivery()
         thread = threading.Thread(target=self._thread_proc)
         thread.start()
@@ -1555,7 +1577,7 @@ class DAM(QtCore.QThread):
                     self.pollingInterval = 0.
                     break
                 #print(f'host,dao:{host,aggregatedDAO}')
-                if DAM.Perf: ts = timer()
+                if DataAccessMonitor.Perf: ts = timer()
                 devPars = [i.devPar for i in aggregatedDAO]
                 #printv(f'devPars: {devPars}')
                 try:
@@ -1572,7 +1594,7 @@ class DAM(QtCore.QThread):
                 if not isinstance(r,dict):
                     printw('ERR.PP. unexpected response: '+str(r)[:80])
                     break
-                if DAM.Perf: print('retrieval time from %s = %.4fs'\
+                if DataAccessMonitor.Perf: print('retrieval time from %s = %.4fs'\
                 %(host,timer()-ts))
                 
                 printv('>thread_proc._process_data')
@@ -1591,10 +1613,11 @@ class DAM(QtCore.QThread):
         for hostDevParTuple,parDict in devDict.items():
             if hostDevParTuple == 'ppmuser':
                 continue
-            if pargs.verbose>1: printv(croppedText(f'update GUI objects of {hostDevParTuple,parDict}'))
+            #if pargs.verbose>1: printv(croppedText(f'update GUI objects of {hostDevParTuple,parDict}'))
             # liteServer returns {'host:dev':{par1:{prop1:{},...},...}},
-
-            def append_da(hostDevPar, valDict):
+            def update_pv(hostDevPar, valDict):
+                """Update data dictionary of the hostDevPar in the daTable.
+                Use dict.append to replace old values"""
                 #if pargs.verbose: printv(croppedText(f'par,valDict:{hostDevPar,valDict}'))
                 try:
                     daTable = Window.tabWidget.currentWidget().daTable
@@ -1602,21 +1625,21 @@ class DAM(QtCore.QThread):
                     dataAccess.currentValue = valDict
                     dataAccess.attr['value'] = valDict
                     datAccess.append(hostDevPar)
-                except Exception as e:
-                    printe(f'in append_da {hostDevPar, valDict}: {e}')
+                except KeyError as e:
+                    #printv(f'The hostDevPar {e} is not for current tableWidget')
                     return
 
             if isinstance(hostDevParTuple,tuple):
                 hostDevPar = ':'.join(hostDevParTuple)
                 valDict = parDict['value']
-                append_da(hostDevPar, valDict)
+                update_pv(hostDevPar, valDict)
             else: #liteServer provide data keyed with hostDev, not devPar
                 hostDev = hostDevParTuple
                 for par, pd in parDict.items():
                     hostDevPar = hostDev+':'+par
-                    append_da(hostDevPar, pd['value'])
+                    update_pv(hostDevPar, pd['value'])
         return datAccess
-DataAccessMonitor = DAM()
+dataAccessMonitor = DataAccessMonitor()
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #``````````````````Data access object`````````````````````````````````````````
 class DataAccess():
@@ -2060,10 +2083,10 @@ def run():
     Win = Window()
 
     if pargs.restore:
-        #DataAccessMonitor.setup_dataDelivery('Stopped')
+        #dataAccessMonitor.setup_dataDelivery('Stopped')
         pass
     else:
-        DataAccessMonitor.setup_dataDelivery('Asynchronous')
+        dataAccessMonitor.setup_dataDelivery('Asynchronous')
 
     # arrange keyboard interrupt to kill the program
     import signal
@@ -2076,6 +2099,6 @@ def run():
     except Exception as e:#KeyboardInterrupt:
         # # This exception never happens
         printi('keyboard interrupt: exiting')
-    DataAccessMonitor.setup_dataDelivery('Stopped')
+    dataAccessMonitor.setup_dataDelivery('Stopped')
     EventExit.set()
 
