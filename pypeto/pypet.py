@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """DaTable view of process variables from EPICS or liteServers"""
-__version__= 'v3.0.2 2025-05-08'# multiple tabWidgets
+__version__= 'v3.0.3 2025-05-08'# support of multiple tabWidgets
 #TODO: embedding works on Raspberry and Lubuntu but not on RedHat
 #TODO: If connection is restored, subscribtion times out
 """tests: 
@@ -285,7 +285,7 @@ class QComboBoxDAO(QW.QComboBox):
         self.lineEdit().setText(txt)
 
     def contextMenuEvent(self,event):
-        print(f'RightClick at comboBox {self.dao.name}')
+        #print(f'RightClick at comboBox {self.dao.name}')
         Win.rightClick(self.dao)
 
     def wheelEvent(self, event):
@@ -1186,12 +1186,12 @@ class Window(QW.QMainWindow):
 
     def deliveryActionChanged(self,*_):
         mode = self.deliveryCombo.currentText()
-        print(f'deliveryActionChanged: {mode, DataAccessMonitor.currentDeliveryMode}')
+        #print(f'deliveryActionChanged: {mode, DataAccessMonitor.currentDeliveryMode}')
         dataAccessMonitor.setup_dataDelivery(mode)
 
     def deliveryActionPressed(self,*_):
         mode = self.deliveryCombo.currentText()
-        print(f'deliveryActionPressed: {mode}')
+        #print(f'deliveryActionPressed: {mode}')
         if mode == 'Stopped':
             dataAccessMonitor.setup_dataDelivery(mode)
 
@@ -1485,7 +1485,7 @@ class DataAccessMonitor(QtCore.QThread):
         if mode not in ['','Stop']:
             #print('Calling _stop')
             self._stop()
-        
+
         if len(self.hostDAOs) == 0:
             for i,tableWidget in enumerate(Window.tableWidgets):
                 #print(f'Adding ado PVs for tab{i}')
