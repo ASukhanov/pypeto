@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""DaTable view of process variables from EPICS or liteServers"""
+"""Table view of process variables from EPICS and liteServer infrastructures"""
 __version__= 'v3.1.0 2025-05-08'# save/resore is working, pushbutton style, pargs.instance 
+
 #TODO: If tabs are with different namespaces, then only one gets updated 
 #TODO: embedding works on Raspberry and Lubuntu but not on RedHat
 #TODO: If connection is restored, subscribtion times out
@@ -34,9 +35,6 @@ DataDeliveryModes = {'Asynchronous':0., 'Stopped':0., 'Polling 1 s':1.,
 StyleSheet_darkBackground = 'background-color: rgb(120, 120, 0); color: white'
 StyleSheet_lightBackground = 'background-color: white; color: black'
 Win = None
-#ButtonStyleSheet = 'border: 2px solid #8f8f91;border-radius: 6px;'
-#ButtonStyleSheet = 'border-radius: 6px;'# border-width: 2px; border-color: black;'
-ButtonStyleSheet = ''
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #````````````````````````````Helper functions`````````````````````````````````
 programStartTime = time.time()
@@ -318,7 +316,7 @@ class QLineEditDAO(QW.QLineEdit):
             Win.rightClick(self.dao)
 
 class QPushButtonDAO(QW.QPushButton):
-    """LineEdit associated with the Data Access Object""" 
+    """PushButton associated with the Data Access Object""" 
     def __init__(self, dao, text=None):
         super().__init__()
         self.dao = dao

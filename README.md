@@ -2,16 +2,17 @@
 PyQt-based tabular user interface for designing and implementing control screens for EPICS (CA and PVA) and LiteServer devices.
 
 Supported:
- - control of EPICS PVs and liteServer PVs,
- - automatic page generation,
+ - control of EPICS PVs and LiteServer PVs,
+ - tabs: several control pages can be managed from one window,
+ - automatic page generation for LiteServer devices,
+ - single configuration file can be used for many similar devices,
+ - configuration files are python scripts,
+ - snapshots: control page can be saved and selectively restored from the saved snapshots,
+ - embedding os displays from other programs to a range of cells,
+ - plotting of selected cells using pvplot,
  - merged cells, adjustable size of rows and columns, fonts and colors,
  - horizontal and vertical slider widgets,
- - configuration using python,
- - single configuration file can be used for many similar devices,
- - embedding displays of other programs to a range of cells,
- - plotting of selected cells using pvplot,
  - content-driven cell coloring,
- - snapshots: full page can be saved and the selected cells could be restored from the saved snapshots,
  - slicing of vector parameters.
 
 ![simScope](./docs/pypeto_simScopePVA.png)
