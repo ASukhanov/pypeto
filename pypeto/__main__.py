@@ -26,7 +26,7 @@ def main():
     parser.add_argument('-H','--hidemenubar',  action='store_true',  help=\
       'Hide menuBar and statusBar')
     parser.add_argument('-i','--instance', default='', help=\
-      'This argument will be available to target pypage as "builtins.pypage_INSTANCE"')
+      'This argument will be transfered to target page"')
     parser.add_argument('-r','--restore', action='store_true', help=\
       'Restore the parameter setting from a snapshot')
     parser.add_argument('-R','--readonly', action='store_true', help=\

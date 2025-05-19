@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 """DaTable view of process variables from EPICS or liteServers"""
-__version__= 'v3.0.3 2025-05-08'# support of multiple tabWidgets
+__version__= 'v3.1.0 2025-05-08'# save/resore is working, pushbutton style, pargs.instance 
+#TODO: If tabs are with different namespaces, then only one gets updated 
 #TODO: embedding works on Raspberry and Lubuntu but not on RedHat
 #TODO: If connection is restored, subscribtion times out
-"""tests: 
-python -m pypeto -c test -f peakSimLocal
-python -m pypeto -c test -f peakSimLocal peakSimGlobal
-python -m pypeto -c test -f peakSimLocal peakSimGlobal lclScaler
-"""
 
 import os, threading, subprocess, sys, time, math
 timer = time.perf_counter
@@ -18,7 +14,6 @@ from pyqtgraph import SpinBox
 import numpy as np
 import traceback
 from functools import partial
-import builtins # for "Monkey patching" of pypages
 from os import system as os_system, environ as os_environ
 
 from . import detachable_tabs
@@ -117,16 +112,18 @@ def t2v(txt, dtype):
         raise ValueError(msg)
     return v
 
-def select_file_interactively(directory, title='Select a *_pp.py file'):
-    #print(f'select_file_interactively:{directory}')
+def select_files_interactively(directory, title='Select a *_pp.py file'):
+    #print(f'select_files_interactively:{directory}')
+    abspath = os.path.abspath(directory)
     dialog = QFileDialog()
     dialog.setFileMode( QFileDialog.FileMode() )
     ffilter = 'pypet (*_pp.py)'
-    r = dialog.getOpenFileName( None, title, directory, ffilter)
-    relativeName = r[0].replace(directory+'/', '')
-    fname = relativeName[:-3]# remove .py
-    #print(f"Configuration module: '{fname}'")
-    return fname
+    files = dialog.getOpenFileNames( None, title, abspath, ffilter)[0]
+    r = []
+    for file in files:
+        relativeName = file.replace(abspath+'/', '')
+        r.append(relativeName[:-3])# remove .py
+    return r
 
 def pvplot(devPars, plotType=None, dialog=None):
     """Plot device:parameters using pvplot app"""
@@ -145,16 +142,9 @@ def pvplot(devPars, plotType=None, dialog=None):
     subprocess.Popen(subprocCmd, stdout=subprocess.PIPE)
     if dialog:  dialog.accept()
 
-def get_namespace(pypage):
+def get_namespace():
     """Retrieve namespace (EPICS, PVA or LITE from configuation"""
-    try:    ns = pypage.namespace
-    except: ns = None
-    #print(f'get_namespace: {ns}')
-    if ns is None:
-        ns = pargs.access
-    ns = ns.upper()
-    #?if ns[:4] == 'LITE': ns = 'LITE'
-    return ns
+    return currentDaTable().pypage.namespace.upper()
 
 def rgbColorCode(text):
     """Return color code, associated with three first letters of the text"""
@@ -343,7 +333,18 @@ class QPushButtonDAO(QW.QPushButton):
         #print(f'button {self.dao.parName} sizeHint: {sizeHint}')
         #self.resize(sizeHint)
         
-        self.setStyleSheet('background-color:lightGrey;'+ButtonStyleSheet)
+        self.setStyleSheet("QPushButton{"
+            #"background-color: lightBlue;"
+            "background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,"
+                "stop: 0 white, stop: 1 lightBlue);"
+            #'border: 2px solid blue;'
+            "border-style: solid;"
+            "border-color: Grey;"
+            "border-width: 2px;"
+            "border-radius: 10px;}"
+            #"font-weight: bold;"
+            'QPushButton::pressed{background-color:pink;}'
+        )#{+ButtonStyleSheet)
         self.clicked.connect(self.buttonClicked)
 
     def buttonClicked(self):
@@ -398,6 +399,14 @@ class MyTableWidget(QW.QTableWidget):
 
     def set_daTable(self, daTable):
         self.daTable = daTable
+
+    def sizeHint(self):
+        hh = self.horizontalHeader()
+        vh = self.verticalHeader()
+        fw = self.frameWidth() * 2
+        return QtCore.QSize(
+            hh.length() + vh.sizeHint().width() + fw,
+            vh.length() + hh.sizeHint().height() + fw)
 
 class QSliderDAO(QW.QSlider):
     """Slider associated with the Data Access Object"""
@@ -456,6 +465,9 @@ class QSliderDAO(QW.QSlider):
         super().setValue(widgetValue)
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #''''''''''''''''''Main Window````````````````````````````````````````````````
+def currentDaTable():
+    return Window.tabWidget.currentWidget().daTable
+
 class Window(QW.QMainWindow):
     """Main window"""
     bottomLine = None
@@ -475,9 +487,6 @@ class Window(QW.QMainWindow):
             reloadItem = QW.QAction("&Reload", self\
             , triggered = self.reload_table)
             fileMenu.addAction(reloadItem)
-            # loadItem = QW.QAction("&Load another snapshot", self\
-            # , triggered = self.load_snapshot)
-            # fileMenu.addAction(loadItem)
             rpaItem = QW.QAction("Restore &all parameters", self\
             , triggered = self.restore_allParameters)
             fileMenu.addAction(rpaItem)
@@ -509,13 +518,13 @@ class Window(QW.QMainWindow):
         self.load_tables()
 
         Window.tabWidget = detachable_tabs.DetachableTabWidget()
-        print(f'tabWidget created')
+        printv(f'tabWidget created')
         self.setCentralWidget(Window.tabWidget)
         #Window.tabWidget.addTab(self.tableWidget, self.tableWidget.daTable.pypage.title)
         #tab2 = QW.QLabel('Test Widget 2')
         #Window.tabWidget.addTab(tab2, 'Tab2')
         for i,tableWidget in enumerate(Window.tableWidgets):
-            title = tableWidget.daTable.configModule.pyPage.title
+            title = tableWidget.daTable.pypage.title
             #print(f'Adding tab{i}: {title}')
             Window.tabWidget.addTab(tableWidget, tableWidget.daTable.pypage.title)
 
@@ -573,17 +582,12 @@ class Window(QW.QMainWindow):
         self.lostConnections = set()
         self.widgetColor = {}
 
-        '''
-        pf = '' if pargs.files is None else ' '+pargs.files
-        if pargs.restore:
-            title = 'snapShot'+pf
+        title = 'pypet '
+        if pargs.device:
+            title += pargs.device
         else:
-            try:
-                title = self.tableWidget.daTable.currentPage.title
-            except:
-                title = f'{AppName}'+pf
-        '''
-        self.setWindowTitle('pypet')
+            title += ','.join(pargs.files).replace('_pp','')
+        self.setWindowTitle(title)
         #Win.resize(350, 300)
         self.screenGeometry = QW.QDesktopWidget().screenGeometry().getRect()
         self.show()
@@ -629,7 +633,7 @@ class Window(QW.QMainWindow):
             #self.tableWidget.setAlternatingRowColors(True)
             #self.tableWidget.setStyleSheet("alternate-background-color: red; background: lightGrey; color: #6b6d7b; ")
 
-            printv('```````````````````````Processing table`````````````````````')
+            printv(f'```````````````````````Processing table {daTable.pypage.title}')
             self._process_daTable(daTable)
             printv(',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,')
             self.tableWidget.cellClicked.connect(self.handleCellClicked)
@@ -637,38 +641,25 @@ class Window(QW.QMainWindow):
 
         if pargs.hidemenubar:
             self.hide_menuBar()
-        self.fitToTable()
         Window.InitializationFinished = True
 
     def edit_table(self):
         """Edit page file externally"""
-        daTable = Window.tabWidget.currentWidget().daTable
-        cmd = f'xdg-open {daTable.configModule.__file__}'
+        daTable = currentDaTable()
+        cmd = f'xdg-open {daTable.file}'
         printi(f'executing: {cmd}')
         subprocess.Popen(cmd.split())
 
     def commit_table(self):
-        """Commit and push changed page to gitlab"""
+        """Commit and push changed page to github"""
         import getpass
         user = getpass.getuser()
+        cf = currentDaTable().file
         cmd = (f'cd {pargs.configDir};'
-        f' git commit {pargs.file}.py -m"by {user} using {AppName}";'
+        f' git commit {cf} -m"by {user} using {AppName}";'
         f' git push')
         printi(f'executing: {cmd}')
         os_system(cmd)
-    
-    def fitToTable(self):
-        x = self.tableWidget.verticalHeader().size().width()
-        for i in range(self.tableWidget.columnCount()):
-            x += self.tableWidget.columnWidth(i)
-
-        #y = self.tableWidget.horizontalHeader().size().height()*4
-        y = 0
-        for i in range(self.tableWidget.rowCount()):
-            y += self.tableWidget.rowHeight(i)+2
-        #self.setFixedSize(x, y)
-        #print(f'rows {self.tableWidget.rowCount(),x,y}')
-        self.resize(x,y)
 
     def update_statusBar(self,msg):
         #print(f'update_statusBar:{msg}')
@@ -707,17 +698,18 @@ class Window(QW.QMainWindow):
 
             if obj is None:
                 continue
+            fgc = 'darkBlue'
             if isinstance(obj,str):
                 item = QW.QTableWidgetItem(str(obj))
                 #print(f'set cell{row,col} to {obj}')
                 flags = item.flags() & ~QtCore.Qt.ItemIsEditable
                 item.setFlags(flags)
                 item.setBackground(configColor(defaultColor))
-                self.set_tableItem(row,col, item,cellAttribute,fgColor='darkBlue')
+                self.set_tableItem(row,col, item,cellAttribute,fgColor=fgc)
                 continue
             elif isinstance(obj,list):
                 print (f'####rowCol{row,col} is list: {obj}')
-                self.set_tableItem(row,col,obj, cellAttribute, fgColor='darkBlue')
+                self.set_tableItem(row,col,obj, cellAttribute, fgColor=fgc)
                 continue
             if not issubclass(type(obj), DataAccess):
                 msg = f'Unknown object@{row,col}: {type(obj)}'
@@ -960,17 +952,19 @@ class Window(QW.QMainWindow):
 
     def handleItemPressed(self, item):
         #printv('pressed[%i,%i]'%(item.row(),item.column()))
-        pass
+        return
 
     def handleItemDoubleClicked(self, item):
-        print(f'DoubleClicked {item.row(),item.column()}')
+        #print(f'DoubleClicked {item.row(),item.column()}')
+        return
 
     def handleItemClicked(self, item):
-        print(f'Clicked {item.row(),item.column()}')
+        #print(f'Clicked {item.row(),item.column()}')
         self.handleCellClicked(item.row(),item.column())
 
     def handleCellDoubleClicked(self, x,y):
-        print(f'Cell DoubleClicked {x,y}')
+        #print(f'Cell DoubleClicked {x,y}')
+        return
 
     def handleCellClicked(self, row,column):
         item = self.tableWidget.item(row,column)
@@ -1043,8 +1037,8 @@ class Window(QW.QMainWindow):
         self.heartBeatTime = t
         #TODO: execute info on all devices
         printv(f'>heartBeat')
-        daTable = Window.tabWidget.currentWidget().daTable
-        namespace = get_namespace(daTable.pypage)
+        daTable = currentDaTable()
+        namespace = get_namespace()
         #print(f'>heartbeat namespace: {namespace}')
         if namespace is None: namespace = DefaultNamespace
         if namespace == 'ADO':
@@ -1057,8 +1051,6 @@ class Window(QW.QMainWindow):
         else:
             printe(f'Not supported namespace: {namespace}')
             return
-
-        daTable = Window.tabWidget.currentWidget().daTable
 
         for devName,daoDict in daTable.deviceMap.items():
             dao = list(daoDict.values())
@@ -1165,9 +1157,10 @@ class Window(QW.QMainWindow):
     def plot_selectedAdopars(self, plotType=None):
         devPars = []
         selecteItems = self.tableWidget.selectedItems()
+        daTable = currentDaTable()
         for item in selecteItems:
             row,col = item.row(), item.column()
-            dao = Window.daTable.pos2obj[(row,col)][0]
+            dao = daTable.pos2obj[(row,col)][0]
             if not isinstance(dao, DataAccess):
                 continue
             devPar = dao.name
@@ -1196,19 +1189,20 @@ class Window(QW.QMainWindow):
             dataAccessMonitor.setup_dataDelivery(mode)
 
     def get_snapshotDirectory(self):
-        printw('TODO: get_snapshotDirectory need to be fixed')
-        return
-        snapshotDir = pargs.configDir
+        snapshotDir = os.path.abspath(pargs.configDir)
         #printv(f'pargs.file:{pargs.file}, pargs.device:{pargs.device}')
-        if pargs.file:
-            snapshotDir += 'Snapshots/'+pargs.file.replace('_pp','')
+        if pargs.files:
+            daTable = currentDaTable()
+            daTable.file.rsplit('/',1)
+            relativeFilename = daTable.file.rsplit('/',1)[-1].replace('_pp.py','')
+            snapshotDir += '/Snapshots/' + relativeFilename
             snapshotDir += '/'
         else: # should not happen
             snapshotDir += 'devices/'
         if pargs.device:
             snapshotDir += pargs.device+'/'
         snapshotDir = snapshotDir.replace('.','_')# filename with dot cannot be included
-        #printv(f'snapshotDir: {snapshotDir}')
+        printv(f'snapshotDir: {snapshotDir}')
         return snapshotDir
         
     def check_path(path):
@@ -1222,22 +1216,20 @@ class Window(QW.QMainWindow):
             printe('in check_path '+path+' error: '+str(e))
 
     def save_snapshot(self):
-        printe('TODO: save_snapshot needs repair')
-        return
         snapshotDir = self.get_snapshotDirectory()
-        Window.check_path(snapshotDir)
         # module name cannot have dots in the name
-        instance = builtins.pypage_INSTANCE.replace('.','_')
-        fname = time.strftime(f'{instance}_%Y%m%d_%H%M_pp.py')
-        fname = self.confirm_snapshot(snapshotDir, fname)
+        fnamePart = time.strftime(f'pp%Y%m%d_%H%M')
+        fname = self.confirm_snapshot(snapshotDir, fnamePart+'_pp.py')
         if fname is None:
             return
+        Window.check_path(snapshotDir)
         fname = snapshotDir + fname
         row = []
         rows = [row]
         prevrowNumber, prevcolNumber = 0,0
-        for key, value in Window.daTable.pos2obj.items():
-            #print(f'row,col:{key}, obj:{value[0]}, attr:{value[1]}')
+        daTable = currentDaTable()
+        for key, value in daTable.pos2obj.items():
+            #print(f'row,col:{key}, obj:{value[0]}, attr:{value}')
             rowNumber,colNumber = key
             if rowNumber > prevrowNumber:
                 # append empty rows, if any
@@ -1254,7 +1246,9 @@ class Window(QW.QMainWindow):
                 prevcolNumber = colNumber
             obj,attr = value
             # do not need initial values for non-writable parameters
-            features = attr.get('features','RWE')
+            #print(f'attr: {attr}')
+            #features = attr.get('features','RWE')
+            features = attr.get('features','')
             writable = 'W' in features
             if writable:
                 value = obj.get()
@@ -1278,19 +1272,25 @@ class Window(QW.QMainWindow):
             row.append({txt:attr})
             #except Exception as e:
             #    printe(f'in save_snapshot:{e}')
-        try:    namespace = DaTable.CurrentPage.namespace
-        except: namespace = DefaultNamespace
-        content = f"_Namespace = '{namespace}'\n"
-        content += f'_Columns = {self.columnAttributes}\n'
-        content += '_Rows = [\n'
+        #except: namespace = DefaultNamespace
+        content = (
+f'#Saved pypet snapshot.\n'
+f'class PyPage():\n'
+f'    def __init__(self, **_):\n'
+#f'        dev = "{cnsName}"\n'
+f'        self.namespace = "{daTable.pypage.namespace}"\n'
+f'        self.title = "{fnamePart}"\n'
+ '        self.rows = [\n'
+    )
         for row in rows:
             content += f'{row},\n'
         content += ']\n'
-        #print(f'content:{content}')
+
         try:
             f = open(fname,'w')
             f.write(content)
             f.close()
+            printi(f'Snapshot saved to {fname}')
         except Exception as e:
             Win.update_statusBar('ERROR: saving {fname}: {e}')
 
@@ -1321,9 +1321,6 @@ class Window(QW.QMainWindow):
         cmd = f'python3 -m {AppName} -r -e -g{rx},{ry} -c{snapshotDir}'
         printi(f'cmd: {cmd}')
         subprocess.Popen(cmd.split())#,stdout=subprocess.PIPE)
-
-    #def load_snapshot(self):
-    #    print(f'>load_snapshot')
 
     def restore_parameters(self):
         selectedParameters = self.tableWidget.selectedItems()
@@ -1359,7 +1356,7 @@ def MySlot(listOfParNames):
     printv(f'>MySlot received event: {listOfParNames}')
     tableWidget = Window.tabWidget.currentWidget()
     daTable = tableWidget.daTable
-    printv(f'daTable: {daTable.configModule.pyPage.title}')
+    printv(f'daTable: {daTable.pypage.title}')
     if listOfParNames is None:
         daRowCols = daTable.par2objAndPos.values()
     else:
@@ -1390,7 +1387,7 @@ def MySlot(listOfParNames):
         try:
             #val = datAccess.currentValue['v']# 'liteServer
             val = [currentValue]
-            printv('val:%s'%str(val)[:100])
+            #printv('val:%s'%str(val)[:100])
             if val is None:
                 try:
                     tableWidget.item(*rowCol).setText('none')
@@ -1620,7 +1617,7 @@ class DataAccessMonitor(QtCore.QThread):
                 Use dict.append to replace old values"""
                 #if pargs.verbose: printv(croppedText(f'par,valDict:{hostDevPar,valDict}'))
                 try:
-                    daTable = Window.tabWidget.currentWidget().daTable
+                    daTable = currentDaTable()
                     dataAccess = daTable.par2objAndPos[hostDevPar][0]
                     dataAccess.currentValue = valDict
                     dataAccess.attr['value'] = valDict
@@ -1736,13 +1733,13 @@ class DataAccess():
 class DataAccess_epics(DataAccess):
     """Access to EPICS namespace"""
     def info(self):
-        if not DataAccess.Access:
-            try:
-                from . import cad_epics# This is standard location
-            except:
-                from cad_epics import epics as cad_epics
+        try:
+            from . import cad_epics# This is standard location
+        except:
+            from cad_epics import epics as cad_epics
+        if DataAccess.Access != cad_epics:
             DataAccess.Access = cad_epics
-            print(f'Imported cad_epics {DataAccess.Access.__version__}')
+            printi(f'Imported cad_epics {DataAccess.Access.__version__}')
         DataAccess.Namespace = 'EPICS'
         #devParName = self.name.rsplit(':',1)
         devPar = self.devPar
@@ -1755,13 +1752,13 @@ class DataAccess_epics(DataAccess):
 class DataAccess_pva(DataAccess):
     """Access to EPICS PVAccess namespace"""
     def info(self):
-        if not DataAccess.Access:
-            try:
-                from . import cad_pvaccess# This is standard location
-            except:
-                from cad_pvaccess import pvaccess as cad_pvaccess
+        try:
+            from . import cad_pvaccess# This is standard location
+        except:
+            from cad_pvaccess import pvaccess as cad_pvaccess
+        if DataAccess.Access != cad_pvaccess:
             DataAccess.Access = cad_pvaccess
-            print(f'Imported cad_pvaccess {DataAccess.Access.__version__}')
+            printi(f'Imported cad_pvaccess {DataAccess.Access.__version__}')
         DataAccess.Namespace = 'PVA'
         devPar = self.devPar
         r = DataAccess.Access.info(devPar)
@@ -1771,11 +1768,11 @@ class DataAccess_pva(DataAccess):
 class DataAccess_lite(DataAccess):
     """Access to liteServer parameters through liteAccess.Access"""
     def info(self):
-        if not DataAccess.Access:
-            import liteaccess
-            printi(f'liteaccess {liteaccess.__version__}')
+        import liteaccess
+        if DataAccess.Access != liteaccess.Access:
             DataAccess.Access = liteaccess.Access
-            DataAccess.Access.set_dbg(max(pargs.verbose-1,0))
+            printi(f'Imported liteaccess {liteaccess.__version__}')
+        DataAccess.Access.set_dbg(max(pargs.verbose-1,0))
         if DataAccess.Access.__version__ < '3.0.0':
             print(f'liteAccess version should be > 3.0.0, not {lAccess.__version__}')
             sys.exit(1)
@@ -1808,14 +1805,13 @@ class DaTable():
         self.par2objAndPos = {}# map of {parameterName:dataAccessObject,[(row,col),vslice]}
         self.pos2obj = {}#      map of {(row,col):dataAccessObject}
         self.deviceMap = {}#    map of {deviceName:[dataAccessObject,...]}
-        self.configModule = None
+        self.pypage = None
+        self.file = None
+
+        self._configModule = None
         maxcol = 0
         configDir = pargs.configDir
 
-        if pargs.device:
-            printw(('The dao have been provided in the command line,\n'\
-            ' local configuration will be build'))
-            moduleFile = build_temporary_pvfile(pargs.device)
         #``````````read conguration file into the config dictionary```````````````
         from importlib import import_module, reload
         moduleFile = moduleFile.replace(configDir,'')
@@ -1824,25 +1820,28 @@ class DaTable():
             sys.exit(0)
         
         try:
-            if self.configModule is not None:
-                self.configModule = reload(self.configModule)
+            if self._configModule is not None:
+                self._configModule = reload(self._configModule)
                 printi(f'Module {module} reloaded')
             else:
-                print(f'importing {module}')
-                self.configModule = import_module(module)
+                #printi(f'importing {module}')
+                self._configModule = import_module(module)
         except ModuleNotFoundError as e:
             printe(f'Trying to import {configDir}{moduleFile}.py: {e}')
             sys.exit(0)
-        self.pypage = self.configModule.pyPage
+        self.file = self._configModule.__file__
+        printv(f'Importing {self.file}')
+        self.pypage = self._configModule.PyPage(instance=pargs.instance)
+        print('='*79)
+        print(f'file: {self.file}')
         if True:#try:
-            #rows = self.configModule._Rows
             rows = self.pypage.rows
             title = self.pypage.title
-            print(f'title: {title}')
+            #print(f'title: {title}')
         else:#except:
             printe('No entry "_Rows" in the config file')
             sys.exit(0)
-        printi(f'Imported: {self.configModule.__file__}')
+        printi(f'Imported: {self.file}')
         #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
         dead_devices = set()
         def evaluate_string(key):
@@ -1851,18 +1850,21 @@ class DaTable():
             printv(f'evaluating string:{key}')
             if key == '':
                 return rdict
-            prefix = key[:2]
-            di = {'L:':DataAccess_lite, 'E:':DataAccess_epics, 'P:':DataAccess_pva}.get(prefix)
-            if di is None:
+
+            #prefix = key[:2]
+            #di = {'L:':DataAccess_lite, 'E:':DataAccess_epics, 'P:':DataAccess_pva}.get(prefix)
+            #print(f'ns: {self.pypage.namespace.upper()}')
+            #if di is not None:
+            #    key = key[2:]
+            #else:
+            if True:
                 try:
-                    ns = get_namespace(self.pypage)
+                    ns = self.pypage.namespace.upper()
                     di = {'LITE':DataAccess_lite, 'EPICS':DataAccess_epics,
                     'PVA':DataAccess_pva, 'ADO':DataAccess_ado}[ns]
                 except Exception as e:
                     printe(f'Exception in setting namespace. {e}')
                     sys.exit(1)                
-            else:
-                key = key[2:]
             
             # Check if the string refers to a data object
             # The data object string should contain ':' in the middle
@@ -1875,7 +1877,7 @@ class DaTable():
             isdao = (isdao and edgeAreOk and ':' in key)
 
             if isdao:
-                #printv(f'dao:{key}')
+                printv(f'dao:{key}')
                 devPar, vslice = split_slice(key)
                 dev,par = devPar.rsplit(':',1)
                 #printv(f'dev,par,vslice: {dev,par,vslice}')
@@ -1883,6 +1885,8 @@ class DaTable():
                     txt = '?'
                     return {'obj':'?', 'attr':{'color':rgbColorCode(txt)}}
                 try:
+                    #print(f'dev, par, vslice: {dev, par, vslice}')
+                    #print(f'di: {di}')
                     obj = di(dev, par, vslice)
                     rdict['obj'] = obj
                     #printv(croppedText(f'ns:{obj.namespace}, obj {obj.name}:{obj}, attr:{obj.attr}'))
@@ -1974,14 +1978,14 @@ class DaTable():
 
                     # do not request configuration parameters
                     try:
-                        #printv(f"features:{obj.attr['features']}")
+                        printv(f"features:{obj.attr['features']}")
                         f = obj.attr.get('features')
                         if f:
                             if 'C' in f:
                                 printi(f'Not requested config parameter {dev,par}')
                                 continue
                         if obj.attr['value'] is None:
-                            #printv(f'Not requested None parameter {dev,par}')
+                            printv(f'Not requested None parameter {dev,par}')
                             continue
                     except Exception as e:
                         printw(f'exception in attr of {dev,par}: {e}')
@@ -2028,31 +2032,34 @@ def build_temporary_pvfile(cnsName):
     printv(croppedText(f'cnsInfo: {cnsInfo}'))
 
     f = open_tmpFile()
-    f.write(f'#Automatically created configuration file for {AppName}.\n')
-    f.write(f'\n_Namespace = "{ns}"\n')
-    f.write(f'\ndev = "{cnsName}"\n')
-    f.write('\n_Columns = {\n')
-    f.write('  1: {"justify": "center", "color": [220,220,220]},\n')
-    f.write('  2: {"width": 100},\n')
-    f.write('}\n')
-    f.write('\n_Rows = [\n')
-    ignored = []#('fecName',)
+    content = (
+f'#Automatically created configuration file for {AppName}, Version 3.0.0.\n'
+f'class PyPage():\n'
+f'    def __init__(self, **_):\n'
+f'        dev = "{cnsName}"\n'
+ '        self.namespace = "LITE"\n'
+f'        self.title = "{cnsName}"\n'
+ '        self.columns = {\n'
+ '          1: {"justify": "center", "color": [220,220,220]},\n'
+ '          2: {"width": 100},\n'
+ '        }\n'
+ '        self.rows = [\n'
+    )
+    #ignored = []#('fecName',)
     for parName in cnsInfo:
-        if parName in ignored:
-            continue
-        f.write(f'["{parName}", dev+":{parName}"],\n')
-    f.write(']\n')
+        #if parName in ignored:
+        #    continue
+        content += f'["{parName}", dev+":{parName}"],\n'
+
+    content  += ']\n'
+    f.write(content)
     f.close()
     printi(f'Temporary module created: {fname}')
     return module
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #`````````````````````````````````````````````````````````````````````````````
 def run():
-    # Define and set variable builtins.pypage_INSTANCE, which will
-    # be acessible to all modules at runtime.
-    # Some consider this an example of "Monkey patching"
     global Win
-    builtins.pypage_INSTANCE = pargs.instance
     sys.path.append(pargs.configDir)
 
     # the --zoom should be handled prior to QtWidgets.QApplication
@@ -2072,9 +2079,14 @@ def run():
             if pargs.files[i][-3:] != '_pp':
                 pargs.files[i] += '_pp'
     else:
-        if not pargs.device:
-            pargs.files = [select_file_interactively(pargs.configDir)]
-            pargs.files.replace(pargs.configDir,'')
+        if pargs.device:
+            printw(('The dao have been provided in the command line,\n'\
+            ' local configuration will be build'))
+            moduleFile = build_temporary_pvfile(pargs.device)
+            pargs.files = [moduleFile]
+        else:
+            pargs.files = select_files_interactively(pargs.configDir)
+            printv(f'pargs.files: {pargs.files}')
             l = len(pargs.configDir)
             if pargs.files[0][:l] == pargs.configDir:
                 pargs.files[0] = pargs.files[0][l:]
