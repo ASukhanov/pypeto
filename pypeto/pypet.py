@@ -1831,7 +1831,10 @@ class DaTable():
             sys.exit(0)
         self.file = self._configModule.__file__
         printv(f'Importing {self.file}')
-        self.pypage = self._configModule.PyPage(instance=pargs.instance)
+        if pargs.instance is None:
+            self.pypage = self._configModule.PyPage()
+        else:
+            self.pypage = self._configModule.PyPage(instance=pargs.instance)
         print('='*79)
         print(f'file: {self.file}')
         if True:#try:

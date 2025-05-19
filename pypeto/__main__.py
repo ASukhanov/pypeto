@@ -25,7 +25,7 @@ def main():
       'Relative position (x,y) of the window on the screen, e.g. -g0.2,0.5')
     parser.add_argument('-H','--hidemenubar',  action='store_true',  help=\
       'Hide menuBar and statusBar')
-    parser.add_argument('-i','--instance', default='', help=\
+    parser.add_argument('-i','--instance', help=\
       'This argument will be transfered to target page"')
     parser.add_argument('-r','--restore', action='store_true', help=\
       'Restore the parameter setting from a snapshot')
