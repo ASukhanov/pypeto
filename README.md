@@ -1,7 +1,7 @@
 # pypeto
 PyQt-based tabular user interface for designing and implementing control screens for EPICS (CA and PVA) and LiteServer devices.
 
-Supported:
+Features:
  - control of EPICS PVs and LiteServer PVs,
  - tabs: several control pages can be managed from one window,
  - automatic page generation for LiteServer devices,
