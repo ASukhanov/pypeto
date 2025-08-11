@@ -41,17 +41,17 @@ class PyPage():
 
         #``````````Definition of rows````````````````````````````````
         self.rows = [
-#['Performance:', {server+'perf':span(3,1)},_,_,{_:{'embed':pvplot,**span(1,10)}}],
+['Performance:', {server+'perf':span(3,1)},_,_,{_:{'embed':pvplot,**span(1,10)}}],
 ["run", dev+"run", 'debug:', server+'debug'],
 ["status", {dev+"status":span(3,1)}],
 ["frequency", dev+"frequency", "nPoints:", dev+"nPoints"],
-#["background", {dev+"background":span(3,1)}],
-#["noise", dev+"noise", "swing:", dev+"swing"],
-#["peakPars", {dev+"peakPars":span(3,1)}],
+["background", {dev+"background":span(3,1)}],
+["noise", dev+"noise", "swing:", dev+"swing"],
+["peakPars", {dev+"peakPars":span(3,1)}],
 #["x", {dev+"x":span(3,1)}],
 #["y", {dev+"y":span(3,1)}],
-#['yMin:', dev+'yMin', 'yMax:', dev+'yMax'],
-#["rps", dev+"rps", "cycle:", dev+"cycle"],
+['yMin:', dev+'yMin', 'yMax:', dev+'yMax'],
+["rps", dev+"rps", "cycle:", dev+"cycle"],
 ['cycle:',dev+"cycle", 'cycleLocal:',localDev+"cycle"],
 [_,dev+"clear",_,localDev+"clear"],
 ]

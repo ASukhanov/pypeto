@@ -21,7 +21,8 @@ Features:
 Control of a simulated oscilloscope from EPICS PVAccess infrastructure [link](https://github.com/ASukhanov/p4pex):<br>
 `python -m pypeto -c test -f simScopePVA -e`
 
-Control of a peak simulator from LiteServer infrastructure :<br>
+Control of a peak simulators from LiteServer infrastructure,
+for more detalis see ![simScope](./test/README.md):<br>
 `python -m pypeto -c test -f peakSimPlot -e`
 
 Several control pages in tabs:<br>

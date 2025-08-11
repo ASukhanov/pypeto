@@ -4,9 +4,9 @@ These tests are working with two LiteServers. One is serving UDP port ```localho
 The liteServer module can be installed using ```pip install liteserver```.<br>
 The servers should be started using following commands:<br>
 ```
-python -m liteserver.device.litePeakSimulator -ilo -p9701
+python -m liteserver.device.litePeakSimulator -ilocalhost -p9701
 python -m liteserver.device.litePeakSimulator -p9701
-python -m liteserver.device.liteScaler -ilo -p9700
+python -m liteserver.device.liteScaler -ilocalhost -p9700
 ```
 Testing commands:<br>
 ```
