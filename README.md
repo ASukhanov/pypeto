@@ -22,7 +22,7 @@ Control of a simulated oscilloscope from EPICS PVAccess infrastructure [link](ht
 `python -m pypeto -c test -f simScopePVA -e`
 
 Control of a peak simulators from LiteServer infrastructure,
-for more detalis see ![simScope](./test/README.md):<br>
+for more detalis see ![tests](./test/README.md):<br>
 `python -m pypeto -c test -f peakSimPlot -e`
 
 Several control pages in tabs:<br>
@@ -32,5 +32,5 @@ Control of a simulated oscilloscope from EPICS Channel Access infrastructure
 [link](https://epics.anl.gov/modules/soft/asyn/R4-38/asynDriver.html#testAsynPortDriverApp):<br>
 `python -m pypeto -c test -fsimScope -e`
 
-See more examples in test directory.
+See more examples in the test directory.
 
