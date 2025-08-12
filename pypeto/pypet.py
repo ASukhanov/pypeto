@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Table view of process variables from EPICS and liteServer infrastructures"""
-__version__= 'v3.1.0 2025-05-08'# save/resore is working, pushbutton style, pargs.instance 
+__version__= 'v1.1.0 2025-08-12'# ADO infrastructure supported
 
 #TODO: If tabs are with different namespaces, then only one gets updated 
 #TODO: embedding works on Raspberry and Lubuntu but not on RedHat
@@ -24,7 +24,6 @@ except: Browser = 'firefox'
 
 #``````````````````Globals````````````````````````````````````````````````````
 AppName = 'pypet'
-DefaultNamespace = 'EPICS'
 
 Process_data_Lock = threading.Lock()# it has no effect
 pargs = None
@@ -1038,7 +1037,6 @@ class Window(QW.QMainWindow):
         daTable = currentDaTable()
         namespace = get_namespace()
         #print(f'>heartbeat namespace: {namespace}')
-        if namespace is None: namespace = DefaultNamespace
         if namespace == 'ADO':
             parName = 'version'
         elif namespace == 'LITE':
@@ -1270,7 +1268,6 @@ class Window(QW.QMainWindow):
             row.append({txt:attr})
             #except Exception as e:
             #    printe(f'in save_snapshot:{e}')
-        #except: namespace = DefaultNamespace
         content = (
 f'#Saved pypet snapshot.\n'
 f'class PyPage():\n'
@@ -1731,14 +1728,14 @@ class DataAccess():
 class DataAccess_epics(DataAccess):
     """Access to EPICS namespace"""
     def info(self):
-        try:
-            from . import cad_epics# This is standard location
-        except:
-            from cad_epics import epics as cad_epics
-        if DataAccess.Access != cad_epics:
+        if not DataAccess.Access:
+            try:
+                from . import cad_epics# This is standard location
+            except:
+                from cad_epics import epics as cad_epics
             DataAccess.Access = cad_epics
             printi(f'Imported cad_epics {DataAccess.Access.__version__}')
-        DataAccess.Namespace = 'EPICS'
+            DataAccess.Namespace = 'EPICS'
         #devParName = self.name.rsplit(':',1)
         devPar = self.devPar
         r = DataAccess.Access.info(devPar)
@@ -1750,14 +1747,14 @@ class DataAccess_epics(DataAccess):
 class DataAccess_pva(DataAccess):
     """Access to EPICS PVAccess namespace"""
     def info(self):
-        try:
-            from . import cad_pvaccess# This is standard location
-        except:
-            from cad_pvaccess import pvaccess as cad_pvaccess
-        if DataAccess.Access != cad_pvaccess:
+        if not DataAccess.Access:
+            try:
+                from . import cad_pvaccess# This is standard location
+            except:
+                from cad_pvaccess import pvaccess as cad_pvaccess
             DataAccess.Access = cad_pvaccess
             printi(f'Imported cad_pvaccess {DataAccess.Access.__version__}')
-        DataAccess.Namespace = 'PVA'
+            DataAccess.Namespace = 'PVA'
         devPar = self.devPar
         r = DataAccess.Access.info(devPar)
         ret = next(iter(r.values()))
@@ -1766,15 +1763,15 @@ class DataAccess_pva(DataAccess):
 class DataAccess_lite(DataAccess):
     """Access to liteServer parameters through liteAccess.Access"""
     def info(self):
-        import liteaccess
-        if DataAccess.Access != liteaccess.Access:
-            DataAccess.Access = liteaccess.Access
+        if not DataAccess.Access:
+            import liteaccess
             printi(f'Imported liteaccess {liteaccess.__version__}')
-        DataAccess.Access.set_dbg(max(pargs.verbose-1,0))
-        if DataAccess.Access.__version__ < '3.0.0':
-            print(f'liteAccess version should be > 3.0.0, not {lAccess.__version__}')
-            sys.exit(1)
-        DataAccess.Namespace = 'LITE'
+            DataAccess.Access = liteaccess.Access
+            DataAccess.Access.set_dbg(max(pargs.verbose-1,0))
+            if DataAccess.Access.__version__ < '3.0.0':
+                print(f'liteAccess version should be > 3.0.0, not {lAccess.__version__}')
+                sys.exit(1)
+            DataAccess.Namespace = 'LITE'
         try:
             info = DataAccess.Access.info(self.devPar)
         except Exception as e:
@@ -1792,9 +1789,67 @@ class DataAccess_lite(DataAccess):
         return r
 
 class DataAccess_ado(DataAccess):
+    """Access to ADO parameters"""
     def info(self):
-        printe('DataAccess_ado is not supported by pypeto')
-        sys.exit(1)
+        if not DataAccess.Access:
+            from cad_io import adoaccess
+            printi(f'Imported cad_io.adoaccess {adoaccess.__version__}')
+            DataAccess.Access = adoaccess.IORequest()
+            #self.namespace = 'ADO'
+            DataAccess.Namespace = 'ADO'
+        ret = {}
+        dev,par = self.name.rsplit(':',1)
+
+        # essential properties:
+        essProps = {'value':'value', 'description':'desc'\
+        , 'legalValues':'legalValues', 'opLow':'opLow', 'opHigh':'opHigh'\
+        , 'engLow':'engLow', 'engHigh':'engHigh'}
+
+        devInfo = DataAccess.Access.info(dev)
+        if par == '*':
+            return devInfo
+        if len(devInfo) == 0:
+            raise LookupError(f'No such name {dev}')
+        self.props = devInfo[par]
+        #print(f'props:{self.props}')
+        if len(self.props) == 0:
+            printw(f'parameter {dev,par} discarded')
+            sys.exit(0)
+        if self.props['value']['type'] == 'VoidType':
+            val = None
+        else:
+            # do not catch exception here, it will be handled one level up
+            val = DataAccess.Access.get((dev,par), timestamp=False)
+            val = val[(dev,par)]['value']
+        ret['value'] = val
+        ret['type'] = self.props['value']['type']
+        ret['count'] = self.props['value']['count']
+        ret['features'] = self.props['value']['features']
+        ret['ppmSize'] = self.props['value']['ppmSize']
+        for prop in self.props:
+            #printv(f'adding property for {dev,par}: {prop}')
+            if prop == 'value':
+                continue
+            try:
+                propVal = DataAccess.Access.get((dev,par,prop), timestamp=False)
+                #print(f'propVal:{propVal}')
+                propVal = propVal[(dev,par)][prop]
+                ret[prop] = propVal
+            except Exception as e:
+                printw(f'Could not get {dev,par,prop}: {e}')
+                continue
+
+        if essProps['engLow'] in ret:
+            ret['engLimits'] = ret.get('engLow'), ret.get('engHigh')
+        if essProps['opLow'] in ret:
+            ret['opLimits'] = ret.get('opLow'), ret.get('opHigh')
+
+        if 'legalValues' in ret:
+            #printv(f"lv:{ret['legalValues']}")
+            ret['legalValues'] = (ret['legalValues']).split(',')
+            #ret['legalValues'] = (ret['legalValues']).split(',')
+        #if pargs.verbose: printv(croppedText(f'info of {dev,par}:{ret}'))
+        return ret
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #``````````````````Data access table``````````````````````````````````````````
 class DaTable():
@@ -1810,9 +1865,9 @@ class DaTable():
         maxcol = 0
         configDir = pargs.configDir
 
-        #``````````read conguration file into the config dictionary```````````````
+        #``````````read conguration file into config dictionary```````````````
         from importlib import import_module, reload
-        moduleFile = moduleFile.replace(configDir,'')
+        moduleFile = moduleFile.replace(configDir,'',1)
         module = moduleFile.replace('/','.')
         if len(module) == 0:
             sys.exit(0)
@@ -1822,10 +1877,10 @@ class DaTable():
                 self._configModule = reload(self._configModule)
                 printi(f'Module {module} reloaded')
             else:
-                #printi(f'importing {module}')
+                printi(f'importing {configDir}/{moduleFile}.py')
                 self._configModule = import_module(module)
         except ModuleNotFoundError as e:
-            printe(f'Trying to import {configDir}{moduleFile}.py: {e}')
+            printe(f'Trying to import {configDir}/{moduleFile}.py: {e}')
             sys.exit(0)
         self.file = self._configModule.__file__
         printv(f'Importing {self.file}')
@@ -1834,7 +1889,7 @@ class DaTable():
         else:
             self.pypage = self._configModule.PyPage(instance=pargs.instance)
         print('='*79)
-        print(f'file: {self.file}')
+        #print(f'file: {self.file}')
         if True:#try:
             rows = self.pypage.rows
             title = self.pypage.title
@@ -2012,8 +2067,7 @@ def build_temporary_pvfile(cnsName):
         f = open(fname,'w')
         return f
         
-    printi('>build_temporary_pvfile')
-    printi(f'namespace: {pargs.access} CNS: {cnsName}')
+    #printi('>build_temporary_pvfile for namespace {pargs.access} CNS: {cnsName}')
     ns = pargs.access.upper()
     if ns in ['EPICS','PVA']:
         printe('-EPICS does not support device introspection')
@@ -2038,7 +2092,7 @@ f'#Automatically created configuration file for {AppName}, Version 3.0.0.\n'
 f'class PyPage():\n'
 f'    def __init__(self, **_):\n'
 f'        dev = "{cnsName}"\n'
- '        self.namespace = "LITE"\n'
+f'        self.namespace = "{ns}"\n'
 f'        self.title = "{cnsName}"\n'
  '        self.columns = {\n'
  '          1: {"justify": "center", "color": [220,220,220]},\n'

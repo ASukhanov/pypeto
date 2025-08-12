@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Spreadsheet view of process variables from EPICS or liteServer infrastructure"""
-__version__= 'v1.0.1 2025-01-06'# 
+__version__= 'v1.1.0 2025-08-08'# Default namespace is LITE. Added support for ADO.
 import argparse
 from . import pypet
 
 pypet.AppName = 'pypeto'
-pypet.DefaultNamespace = 'EPICS'
+pypet.DefaultNamespace = 'LITE'
 
 def main():
     parser = argparse.ArgumentParser(prog='python -m pypeto',
@@ -13,7 +13,7 @@ def main():
       formatter_class=argparse.ArgumentDefaultsHelpFormatter,
       epilog=f'{pypet.AppName}: {pypet.__version__}')
     parser.add_argument('-a','--access', default=pypet.DefaultNamespace, help=\
-      'Infrastructure', choices=['EPICS', 'PVA', 'LITE'])
+      'Infrastructure', choices=['EPICS', 'PVA', 'LITE', 'ADO'])
     parser.add_argument('-c','--configDir', help=\
       f'Config directory',
       default = '/operations/app_store/pypet/pages/')
