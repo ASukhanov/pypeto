@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Table view of process variables from EPICS and liteServer infrastructures"""
-__version__= 'v1.1.0 2025-08-12'# ADO infrastructure supported
+__version__= 'v3.2.0 2025-08-13'# Handling of old config files
 
 #TODO: If tabs are with different namespaces, then only one gets updated 
 #TODO: embedding works on Raspberry and Lubuntu but not on RedHat
@@ -1792,7 +1792,11 @@ class DataAccess_ado(DataAccess):
     """Access to ADO parameters"""
     def info(self):
         if not DataAccess.Access:
-            from cad_io import adoaccess
+            try:
+                from cad_io import adoaccess
+            except:
+                printe('The cad_io module is not available in the python environment.')
+                sys.exit(1)
             printi(f'Imported cad_io.adoaccess {adoaccess.__version__}')
             DataAccess.Access = adoaccess.IORequest()
             #self.namespace = 'ADO'
@@ -1884,10 +1888,24 @@ class DaTable():
             sys.exit(0)
         self.file = self._configModule.__file__
         printv(f'Importing {self.file}')
-        if pargs.instance is None:
-            self.pypage = self._configModule.PyPage()
-        else:
-            self.pypage = self._configModule.PyPage(instance=pargs.instance)
+        try:
+            if pargs.instance is None:
+                self.pypage = self._configModule.PyPage()
+            else:
+                self.pypage = self._configModule.PyPage(instance=pargs.instance)
+        except AttributeError as e:
+            m = self._configModule
+            printi(f'Making pypage from old-formatted module {m.__name__}')
+            class PyPage():
+                pass
+            pypage = PyPage()
+            pypage.title = m.__name__
+            pypage.namespace = m._Namespace
+            pypage.rows = m._Rows
+            try:    pypage.columns = m._Columns
+            except: pass
+            self.pypage = pypage
+
         print('='*79)
         #print(f'file: {self.file}')
         if True:#try:
@@ -1907,20 +1925,13 @@ class DaTable():
             if key == '':
                 return rdict
 
-            #prefix = key[:2]
-            #di = {'L:':DataAccess_lite, 'E:':DataAccess_epics, 'P:':DataAccess_pva}.get(prefix)
-            #print(f'ns: {self.pypage.namespace.upper()}')
-            #if di is not None:
-            #    key = key[2:]
-            #else:
-            if True:
-                try:
-                    ns = self.pypage.namespace.upper()
-                    di = {'LITE':DataAccess_lite, 'EPICS':DataAccess_epics,
-                    'PVA':DataAccess_pva, 'ADO':DataAccess_ado}[ns]
-                except Exception as e:
-                    printe(f'Exception in setting namespace. {e}')
-                    sys.exit(1)                
+            try:
+                ns = self.pypage.namespace.upper()
+                di = {'LITE':DataAccess_lite, 'EPICS':DataAccess_epics,
+                'PVA':DataAccess_pva, 'ADO':DataAccess_ado}[ns]
+            except Exception as e:
+                printe(f'Exception in setting namespace. {e}')
+                sys.exit(1)                
             
             # Check if the string refers to a data object
             # The data object string should contain ':' in the middle
