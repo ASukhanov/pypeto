@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Table view of process variables from EPICS and liteServer infrastructures"""
-__version__= 'v3.2.0 2025-08-13'# Handling of old config files
+__version__= 'v1.2.0 2025-08-13'# Handling of old config files
 
 #TODO: If tabs are with different namespaces, then only one gets updated 
 #TODO: embedding works on Raspberry and Lubuntu but not on RedHat
