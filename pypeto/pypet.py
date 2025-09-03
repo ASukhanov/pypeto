@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Table view of process variables from EPICS and liteServer infrastructures"""
-__version__= 'v1.2.0 2025-08-13'# Handling of old config files
+__version__= 'v1.2.1 2025-09-03'# Do not show tabBar for single tab.
 
 #TODO: If tabs are with different namespaces, then only one gets updated 
 #TODO: embedding works on Raspberry and Lubuntu but not on RedHat
@@ -515,7 +515,11 @@ class Window(QW.QMainWindow):
         self.load_tables()
 
         Window.tabWidget = detachable_tabs.DetachableTabWidget()
-        printv(f'tabWidget created')
+        if len(pargs.files) > 1:
+            printv(f'tabWidget created')
+        else:
+            printv(f'tabWidget is hidden')
+            Window.tabWidget.tabBar.hide()
         self.setCentralWidget(Window.tabWidget)
         #Window.tabWidget.addTab(self.tableWidget, self.tableWidget.daTable.pypage.title)
         #tab2 = QW.QLabel('Test Widget 2')
