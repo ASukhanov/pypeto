@@ -8,7 +8,7 @@ For example: pvaccess.get(('simScope1','NoiseAmplitude')) returns:
 To set NoiseAmplitude to 1.:
 pvaccess.set(('simScope1','NoiseAmplitude',1.))
 """
-__version__ = 'v0.1.2 2025-01-05'# _pvname()
+__version__ = 'v0.1.3 2025-10-23'# handle read-only features.
 
 import time
 #from time import perf_counter as timer
@@ -45,24 +45,39 @@ def info(devPar:tuple):
         'timestampNanoSeconds': v.timeStamp.nanoseconds
         }}
 
-    # With p4p it is impossible to detect if parameter is writable
-    r[devPar]['features'] = 'RWE'
+    # Check if PV is writable
+    try:    # check if it has control field
+        control = v.control
+        #print(f'control of {devPar}: {control}')
+        r[devPar]['features'] = 'RWE'
+    except Exception as e:
+        #print(f'has no control {devPar}: {e}')
+        r[devPar]['features'] = 'R'
 
-    try:    r[devPar]['desc'] = v.display.description
+    try:    # handle description
+        desc = v.display.description
+        r[devPar]['desc'] = desc
+        # Another way to determine PV features. Works only for bridged parameters.
+        # detect if the bridged PV is writable. The description of the bridged PV have suffix: Features: xxx'
+        #features = desc.rsplit('Features: ',1)[1]
+        #r[devPar]['features'] = features\
     except: pass
-    try:  r[devPar]['units'] = v.display.units
+
+    try:    # handle units
+        r[devPar]['units'] = v.display.units
     except: pass
-    try:
+
+    try:    # handle limits
         if not (v.display.limitLow == v.display.limitHigh == 0.0):
             r[devPar]['opLow'] = v.display.limitLow
             r[devPar]['opHigh'] = v.display.limitHigh
     except: pass
-    try:  r[devPar]['units'] = v.display.units
-    except: pass
-    try:
+
+    try:    # handle legalValuse
         r[devPar]['legalValues'] = v.value['choices']
         r[devPar]['value'] = v.value['choices'][v.value['index']]
     except: pass
+
     _PVInfo[devPar] = r
     #print(f'info of {pvName}: {r}')
     return r
