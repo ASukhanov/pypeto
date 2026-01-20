@@ -22,17 +22,26 @@ Features:
 ![simScope](./docs/pypeto_simScopePVA.png)
 
 ## Examples:
-Control of a simulated oscilloscope from EPICS PVAccess infrastructure [link](https://github.com/ASukhanov/p4pex):<br>
-`python -m pypeto -c test -f simScopePVA -e`
-
-Control of a peak simulators from LiteServer infrastructure,
+### Control of a simulated oscilloscope from EPICS PVAccess infrastructure:<br>
+```
+# Start server for a simulated ADC device 'epicsDev0'
+python -m epicsdev.epicsdev -l
+# Start control page ./test/picsdev_pp.py
+python -m pypeto -c test -f epicsdev
+```
+### Control of a peak simulator from LiteServer infrastructure,
 for more detalis see ![tests](./test/README.md):<br>
-`python -m pypeto -c test -f peakSimPlot -e`
+```
+# Start the liteServer of a peak simulator
+python -m liteserver.device.litePeakSimulator -i localhost -p9701
+# Start control page ./test/simScope_pp.oy
+python -m pypeto -c test -f peakSimPlot -e
+```
 
-Several control pages in tabs:<br>
+### Two control pages in tabs:<br>
 `python -m pypeto -c test -f peakSimLocal peakSimGlobal`
 
-Control of a simulated oscilloscope from EPICS Channel Access infrastructure 
+### Control of a simulated oscilloscope from EPICS Channel Access infrastructure 
 [link](https://epics.anl.gov/modules/soft/asyn/R4-38/asynDriver.html#testAsynPortDriverApp):<br>
 `python -m pypeto -c test -fsimScope -e`
 
