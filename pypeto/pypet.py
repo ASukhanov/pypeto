@@ -1,26 +1,34 @@
 #!/usr/bin/env python3
 """Table view of process variables from EPICS and liteServer infrastructures"""
-__version__= 'v1.2.1 2025-09-03'# Do not show tabBar for single tab.
+# pylint: disable=invalid-name
+__version__= 'v1.3.0 2026-01-19'# linted, commented, error handling, button stylesheets corrected
 
 #TODO: If tabs are with different namespaces, then only one gets updated 
 #TODO: embedding works on Raspberry and Lubuntu but not on RedHat
 #TODO: If connection is restored, subscribtion times out
 
-import os, threading, subprocess, sys, time, math
-timer = time.perf_counter
+import os
+import threading
+import subprocess
+import sys
+import time
+from time import perf_counter as timer
 from datetime import datetime
-from qtpy import QtWidgets as QW, QtGui, QtCore
-from qtpy.QtWidgets import QApplication, QFileDialog
-from pyqtgraph import SpinBox
-import numpy as np
 import traceback
 from functools import partial
 from os import system as os_system, environ as os_environ
 
+from qtpy import QtWidgets as QW, QtGui, QtCore
+from qtpy.QtWidgets import QApplication, QFileDialog
+from pyqtgraph import SpinBox, numpy as np
+
 from . import detachable_tabs
 
-try:    Browser = os_environ["BROWSER"]
-except: Browser = 'firefox'
+try:
+    Browser = os_environ["BROWSER"]
+except KeyError:
+    Browser = 'firefox'
+    print(f'WARNING: Environment variable BROWSER not set, using default: {Browser}')
 
 #``````````````````Globals````````````````````````````````````````````````````
 AppName = 'pypet'
@@ -34,43 +42,49 @@ DataDeliveryModes = {'Asynchronous':0., 'Stopped':0., 'Polling 1 s':1.,
 StyleSheet_darkBackground = 'background-color: rgb(120, 120, 0); color: white'
 StyleSheet_lightBackground = 'background-color: white; color: black'
 Win = None
+ColorOfDataField = 'White', #[240,240,240]
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #````````````````````````````Helper functions`````````````````````````````````
 programStartTime = time.time()
-def timeInProgram():
+def _timeInProgram():
     return round(time.time() - programStartTime,6)
-def printw(msg): 
-    print(f'WRN.PP@{timeInProgram()}: '+msg)
+def printw(msg):
+    """Print warning message"""
+    print(f'WRN.PP@{_timeInProgram()}: '+msg)
     if Win: Win.update_statusBar('WRN:'+msg)
 def printe(msg):
-    print(f'ERR.PP@{timeInProgram()}: '+msg)
+    """Print error message"""
+    print(f'ERR.PP@{_timeInProgram()}: '+msg)
     if Win: Win.update_statusBar('ERR:'+msg)
-def printi(msg): print(f'INF.PP@{timeInProgram()}: '+msg)
+def printi(msg):
+    """Print info message"""
+    print(f'INF.PP@{_timeInProgram()}: '+msg)
 def printv(msg):
-    try:
-        if pargs.verbose: print(croppedText('PP.DBG0:'+str(msg)))
-    except: pass
+    """Print verbose message"""
+    if pargs.verbose: print(croppedText('PP.DBG0:'+str(msg)))
 def printvv(msg):
-        if pargs.verbose > 1: print(croppedText('PP.DDB1:'+str(msg)))
+    """Print very verbose message"""
+    if pargs.verbose > 1: print(croppedText('PP.DDB1:'+str(msg)))
 
 def croppedText(txt, limit=200):
+    """Crop long text for printing"""
     if len(txt) > limit:
         txt = txt[:limit]+'...'
     return txt
 
 def iterable(values):
-    """Return iterables of any values"""
+    """Ensure that values is iterable"""
     if isinstance(values, str):
         return [values]
     try:
         if len(values) == 0:
             values = [values]
-    except: values = [values]
-    return values  
+    except TypeError:
+        values = [values]
+    return values
 
 def v2t(values, l=60, fmt=None):
-    """Pretty text from numerical values"""
-    suffix = '...'
+    """convert array of numbers to text"""
     if isinstance(values, str):
         v = values
     else:
@@ -110,6 +124,7 @@ def t2v(txt, dtype):
     return v
 
 def select_files_interactively(directory, title='Select a *_pp.py file'):
+    """Open a dialog to select *_pp.py files interactively"""
     #print(f'select_files_interactively:{directory}')
     abspath = os.path.abspath(directory)
     dialog = QFileDialog()
@@ -140,11 +155,11 @@ def pvplot(devPars, plotType=None, dialog=None):
     if dialog:  dialog.accept()
 
 def get_namespace():
-    """Retrieve namespace (EPICS, PVA or LITE from configuation"""
+    """Return current namespace"""
     return currentDaTable().pypage.namespace.upper()
 
 def rgbColorCode(text):
-    """Return color code, associated with three first letters of the text"""
+    """Return RGB color code according to text prefix"""
     colorDict = {'ERR':[255,170,170], 'UNK':[255,170,170], 'WAR':[255,255,150],
     '?':[231,157,237]}
     color = colorDict.get(text[:3])
@@ -167,17 +182,27 @@ def split_slice(parNameSlice):
     return devParSlice[0], vslice
 
 def configColor(color):
-    """Convert color from config file to QColor"""
+    """Make QColor from the cell's color attribute"""
     c = QtGui.QColor(*color) if isinstance(color,(list,tuple))\
       else QtGui.QColor(color)
     return c
 
 def mkColor(color):
+    """Make color string for stylesheet"""
     if color is None:
-        #color = 'lightCyan'
-        color = [240,240,240]
+        color = ColorOfDataField
     return 'rgb(%i,%i,%i)'%tuple(color)\
           if isinstance(color,list) else str(color)
+
+def check_path(path):
+    """Check if path exists, create it if not"""
+    from os import path as os_path, makedirs as os_makedirs
+    try:
+        if not os_path.exists(path):
+            printi(f'check_path created new path:{path}')
+            os_makedirs(path)
+    except Exception as e:
+        printe('in check_path '+path+' error: '+str(e))
 
 #``````````````````Custom widgets`````````````````````````````````````````````
 #class QDoubleSpinBoxDAO(QW.QDoubleSpinBox):
@@ -187,7 +212,7 @@ class QDoubleSpinBoxDAO(SpinBox):
     - it does not react on frequent changes,
     - units are shown,
     - smart nudging.
-    """ 
+    """
     def __init__(self, dao, color=None):
         super().__init__()
         self.dao = dao
@@ -196,7 +221,8 @@ class QDoubleSpinBoxDAO(SpinBox):
         try:    ivalue = ivalue[0]
         except: pass
         bounds = self.dao.attr.get('opLimits')
-        if not bounds:  bounds = (None, None)
+        if not bounds:
+            bounds = (None, None)
         self.integer = isinstance(ivalue, int)
         printv(f'QDoubleSpinBoxDAO {self.dao.name} int:{self.integer}, {ivalue}')
         #self.valueChanged.connect(self.do_action)
@@ -210,14 +236,21 @@ class QDoubleSpinBoxDAO(SpinBox):
             self.setOpts(minStep=0.01)
         self.setButtonSymbols(QW.QAbstractSpinBox.NoButtons)
         c = mkColor(color)
-        self.setStyleSheet(f'color:darkblue;min-height:14px;background-color:{c}')#; font-weight: bold;')
+        self.setStyleSheet((
+            'color:black;min-height:14px;'
+            f'styleSheet=background-color:{c};'
+            #DNW'border-width:1px;border-style:solid;border-color:gray;border-radius: 10px;'
+            #'color:darkblue;'
+            #'font-weight: bold;'
+            ))
                     
-    def contextMenuEvent(self, event):
+    def contextMenuEvent(self, _event):
         # we don't need its contextMenu (activated on right click)
         printv(f'RightClick at spinbox {self.dao.name}')
         Win.rightClick(self.dao)
 
     def do_action(self):
+        """Set value to DAO if it has changed"""
         locked = Process_data_Lock.locked()
         idle = locked or DataAccessMonitor.currentDeliveryMode == 'Stopped'
         #printv(f'data delivery: {DataAccessMonitor.currentDeliveryMode}')
@@ -249,8 +282,10 @@ class QComboBoxDAO(QW.QComboBox):
         super().__init__()
         self.setEditable(True)
         self.dao = dao
-        try:    v = self.dao.attr['value'][0]
-        except: v = self.dao.attr['value']
+        try:
+            v = self.dao.attr['value'][0]
+        except:
+            v = self.dao.attr['value']
         self.lastValue = v
         printv(f'QComboBoxDAO {self.dao.name}')
         lvs = dao.attr['legalValues']
@@ -271,13 +306,13 @@ class QComboBoxDAO(QW.QComboBox):
         #print(f'combo {self.dao.name} set to {txt}')
         self.lineEdit().setText(txt)
 
-    def contextMenuEvent(self,event):
+    def contextMenuEvent(self, _event):
         #print(f'RightClick at comboBox {self.dao.name}')
         Win.rightClick(self.dao)
 
     def wheelEvent(self, event):
         event.ignore()
-    
+
 class QLineEditDAO(QW.QLineEdit):
     """LineEdit associated with the Data Access Object""" 
     def __init__(self,dao):
@@ -329,19 +364,19 @@ class QPushButtonDAO(QW.QPushButton):
         #sizeHint.setWidth(int(h*0.8))
         #print(f'button {self.dao.parName} sizeHint: {sizeHint}')
         #self.resize(sizeHint)
-        
+
         self.setStyleSheet("QPushButton{"
             #"background-color: lightBlue;"
             "background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,"
                 "stop: 0 white, stop: 1 lightBlue);"
             #'border: 2px solid blue;'
             "border-style: solid;"
-            "border-color: Grey;"
+            "border-color: Gray;"
             "border-width: 2px;"
             "border-radius: 10px;}"
             #"font-weight: bold;"
-            'QPushButton::pressed{background-color:pink;}'
-        )#{+ButtonStyleSheet)
+            "QPushButton::pressed{background-color:pink;}"
+        )
         self.clicked.connect(self.buttonClicked)
 
     def buttonClicked(self):
@@ -349,8 +384,10 @@ class QPushButtonDAO(QW.QPushButton):
         self.dao.set(1)
 
     def contextMenuEvent(self,event):
-        try:    hasSelectedText = self.hasSelectedText()
-        except: hasSelectedText = False
+        try:
+            hasSelectedText = self.hasSelectedText()
+        except:
+            hasSelectedText = False
         if hasSelectedText:
             QW.QLineEdit.contextMenuEvent(self,event)
         else:
@@ -363,16 +400,32 @@ class QPushButtonCmd(QW.QPushButton):
         self.cmd = cmd
         super().__init__(text)
         self.clicked.connect(self.handleClicked)
-        
+
     def handleClicked(self):
         printv(f'clicked {self.cmd}')
-        msg = 'launching `%s`'%str(self.cmd)
-        #printv(msg)
+        msg = f'launching {self.cmd}'
         Win.update_statusBar(msg)
-        p = subprocess.Popen(self.cmd, stdout=subprocess.PIPE, shell=True)
+        subprocess.Popen(self.cmd, stdout=subprocess.PIPE, shell=True)
 
 class MyTableWidget(QW.QTableWidget):
-    """Modified QTableWidget"""
+    """Custom TableWidget to handle right clicks"""
+    def __init__(self, rows, columns, parent=None):
+        super().__init__(rows, columns, parent)
+        self.daTable = None
+        self.setStyleSheet(#ISSUE: background-color setting has no effect
+            "QPushButton{"
+            #"background-color: lightBlue;"
+            "background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,"
+                "stop: 0 white, stop: 1 lightBlue);"
+            #'border: 2px solid blue;'
+            "border-style: solid;"
+            "border-color: Gray;"
+            "border-width: 4px;"
+            "border-radius: 10px;}"
+            #"font-weight: bold;"
+            'QPushButton::pressed{background-color:pink;}'
+        )
+
     def mousePressEvent(self,*args):
         button = args[0].button()
         #print(f'mousePress: {button}')
@@ -437,8 +490,8 @@ class QSliderDAO(QW.QSlider):
     def dao2slider(self, daoValue):
         opl,oph = self.opLimits
         v = int((daoValue - opl)/(oph - opl)*self.maximum)
-        if v < 0:  v = 0
-        if v > self.maximum: v = self.maximum
+        v = max(0, v)
+        v = min(self.maximum, v)
         return v
 
     def handle_value_changed(self):
@@ -516,9 +569,9 @@ class Window(QW.QMainWindow):
 
         Window.tabWidget = detachable_tabs.DetachableTabWidget()
         if len(pargs.files) > 1:
-            printv(f'tabWidget created')
+            printv('tabWidget created')
         else:
-            printv(f'tabWidget is hidden')
+            printv('tabWidget is hidden')
             Window.tabWidget.tabBar.hide()
         self.setCentralWidget(Window.tabWidget)
         #Window.tabWidget.addTab(self.tableWidget, self.tableWidget.daTable.pypage.title)
@@ -534,18 +587,18 @@ class Window(QW.QMainWindow):
         fileMenu.addAction(exitItem)
 
         viewMenu = menubar.addMenu('&View')
-        self.tableHeaders = QW.QAction('&Table headers'\
-        , self, checkable=True)
+        self.tableHeaders = QW.QAction('&Table headers',
+            self, checkable=True)
         self.tableHeaders.triggered.connect(self.update_headers)
         viewMenu.addAction(self.tableHeaders)
-        self.hideMenubar = QW.QAction('&Hide Menubar and Statusbar'\
-        , self, triggered = self.hide_menuBar)
+        self.hideMenubar = QW.QAction('&Hide Menubar and Statusbar',
+            self, triggered = self.hide_menuBar)
         viewMenu.addAction(self.hideMenubar)
-        plotItem = QW.QAction('&Plot selected items', self\
-        , triggered = self.plot_selectedAdopars)
+        plotItem = QW.QAction('&Plot selected items', self,
+            triggered = self.plot_selectedAdopars)
         viewMenu.addAction(plotItem)
-        corplotItem = QW.QAction('&Correlation plot', self\
-        , triggered=partial(self.plot_selectedAdopars, 'Correlation'))
+        corplotItem = QW.QAction('&Correlation plot', self,
+            triggered=partial(self.plot_selectedAdopars, 'Correlation'))
         viewMenu.addAction(corplotItem)
 
         dataMenu = menubar.addMenu('&Data')
@@ -603,6 +656,7 @@ class Window(QW.QMainWindow):
             self.deliveryCombo.setCurrentText('Stopped')
 
     def move_mainWindow(self, relativeXY):
+        """Move main window to relative position on the screen"""
         wh = self.screenGeometry[2:]
         #print(f'relativeXY:{relativeXY}, {wh}')
         xy = (np.array(relativeXY)*wh).astype('int')
@@ -616,9 +670,6 @@ class Window(QW.QMainWindow):
 
     def load_tables(self):
         """Load table from saved snapshot"""
-        # read config file
-        #try:    del Window.daTable
-        #except: pass
         for f in pargs.files:
             daTable = DaTable(f)
             self.tableWidget = MyTableWidget(*daTable.shape, self)
@@ -627,12 +678,13 @@ class Window(QW.QMainWindow):
             self.tableWidget.setSizeAdjustPolicy(
                 QW.QAbstractScrollArea.AdjustToContents)
             self.tableWidget.verticalHeader().setVisible(True)
-            try:    self.columnAttributes = self.tableWidget.daTable.pypage.columns
+            try:
+                self.columnAttributes = self.tableWidget.daTable.pypage.columns
             except Exception as e:
                 printw(f'exception with columnAttributes {e}')
                 self.columnAttributes = {}
             #self.tableWidget.setAlternatingRowColors(True)
-            #self.tableWidget.setStyleSheet("alternate-background-color: red; background: lightGrey; color: #6b6d7b; ")
+            #self.tableWidget.setStyleSheet("alternate-background-color: red; background: lightGray; color: #6b6d7b; ")
 
             printv(f'```````````````````````Processing table {daTable.pypage.title}')
             self._process_daTable(daTable)
@@ -670,8 +722,10 @@ class Window(QW.QMainWindow):
         """Part of the load_table. Build par2objAndPos from pos2obj"""
         rows, columns = daTable.shape
         #print('>_process_daTable}')
-        try:    defaultColor = daTable.pypage['color']
-        except: defaultColor = 'white'
+        try:
+            defaultColor = daTable.pypage.page['color']
+        except AttributeError:# No page or color in the config module
+            defaultColor = 'white'
         for row in range(rows):
           self.tableWidget.setRowHeight(row,20)# This setting has no effect, even for height=1
           #try:  
@@ -867,7 +921,10 @@ class Window(QW.QMainWindow):
                 #print(f'launch@{row,col}: {attributes}')
                 isItemWidget = True
                 pbutton = QPushButtonCmd(cellName, value)
-                pbutton.setStyleSheet(f'background-color:{bgColor}')
+                pbutton.setStyleSheet(
+                    "background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,"
+                    f"stop: 0 white, stop: 1 {bgColor});"
+                )
                 if font:
                     pbutton.setFont(font)
                 self.tableWidget.setCellWidget(row, col, pbutton)
@@ -968,7 +1025,7 @@ class Window(QW.QMainWindow):
         return
 
     def handleCellClicked(self, row,column):
-        item = self.tableWidget.item(row,column)
+        self.tableWidget.item(row,column)
         #print(f'Cell clicked {row,column}')
 
     def update(self,a):
@@ -980,6 +1037,7 @@ class Window(QW.QMainWindow):
             printw('in tableItem.setText:'+str(e))
             
     def rightClick(self, dataAccess):
+        """Handle right click on DataAccess object"""
         attributes = dataAccess.attr
         #print(f'Window. RightClick on {dataAccess.name}, attr:{attributes}')
         d = QW.QMessageBox(self)
@@ -1037,7 +1095,7 @@ class Window(QW.QMainWindow):
             return
         self.heartBeatTime = t
         #TODO: execute info on all devices
-        printv(f'>heartBeat')
+        printv('>heartBeat')
         daTable = currentDaTable()
         namespace = get_namespace()
         #print(f'>heartbeat namespace: {namespace}')
@@ -1073,10 +1131,10 @@ class Window(QW.QMainWindow):
                 if not devName in self.lostConnections:
                     printw(f'No heartbeat from {devName}: {e}')
                     self.lostConnections.add(devName)
-                    self.connectionLost(devName, daTable)                        
+                    self.connectionLost(devName, daTable)
         #printvv('<heartbeat')
 
-    def connectionLost(self, host, daTable):
+    def connectionLost(self, host, daTable=[]):
         printw(f'Lost connection to {host}')
         for devPar,ObjAndPos in daTable.par2objAndPos.items():
             dev,par = devPar.rsplit(':',1)
@@ -1097,12 +1155,12 @@ class Window(QW.QMainWindow):
     def connectionRecovered(self, host, daTable):
         printw(f'Connection to {host} is restored')
         for devPar,ObjAndPos in daTable.par2objAndPos.items():
-            dev,par = devPar.rsplit(':',1)
-            obj,rowCols = ObjAndPos
+            dev,_par = devPar.rsplit(':',1)
+            _obj,rowCols = ObjAndPos
             if dev == host:
                 #print(f'paint it white: {rowCols}')
                 for rowColSlice in rowCols:
-                    rowCol,vslice = rowColSlice
+                    rowCol,_vslice = rowColSlice
                     item = self.tableWidget.item(*rowCol)
                     widget = self.tableWidget.cellWidget(*rowCol)
                     if widget:
@@ -1128,6 +1186,7 @@ class Window(QW.QMainWindow):
         self.embedTimer.start(1000)
 
     def embed_later(self):
+        """Try to embed the external program into the cell."""
         row,col,program = self.embedArgs
         self.embedCountdown -= 1
         #print(f'embed_later({self.embedArgs} {self.embedCountdown})')
@@ -1150,11 +1209,12 @@ class Window(QW.QMainWindow):
             return
         embed_window = QtGui.QWindow.fromWinId(winid)
         embed_widget = QW.QWidget.createWindowContainer(embed_window,
-          self)#, QtCore.Qt.FramelessWindowHint)
+            self)#, QtCore.Qt.FramelessWindowHint)
         self.tableWidget.setCellWidget(row, col, embed_widget)
         self.embedTimer.stop()
 
     def plot_selectedAdopars(self, plotType=None):
+        """Plot selected parameters using pvplot"""
         devPars = []
         selecteItems = self.tableWidget.selectedItems()
         daTable = currentDaTable()
@@ -1189,6 +1249,7 @@ class Window(QW.QMainWindow):
             dataAccessMonitor.setup_dataDelivery(mode)
 
     def get_snapshotDirectory(self):
+        """Get snapshot directory according to pargs"""
         snapshotDir = os.path.abspath(pargs.configDir)
         #printv(f'pargs.file:{pargs.file}, pargs.device:{pargs.device}')
         if pargs.files:
@@ -1205,16 +1266,6 @@ class Window(QW.QMainWindow):
         printv(f'snapshotDir: {snapshotDir}')
         return snapshotDir
         
-    def check_path(path):
-        """Check if path exists, create it if not"""
-        from os import path as os_path, makedirs as os_makedirs
-        try:
-            if not os_path.exists(path):
-                printi(f'check_path created new path:{path}')
-                os_makedirs(path)
-        except Exception as e:
-            printe('in check_path '+path+' error: '+str(e))
-
     def save_snapshot(self):
         snapshotDir = self.get_snapshotDirectory()
         # module name cannot have dots in the name
@@ -1222,7 +1273,7 @@ class Window(QW.QMainWindow):
         fname = self.confirm_snapshot(snapshotDir, fnamePart+'_pp.py')
         if fname is None:
             return
-        Window.check_path(snapshotDir)
+        check_path(snapshotDir)
         fname = snapshotDir + fname
         row = []
         rows = [row]
@@ -1286,14 +1337,16 @@ f'        self.title = "{fnamePart}"\n'
         content += ']\n'
 
         try:
-            f = open(fname,'w')
-            f.write(content)
-            f.close()
+            with open(fname,'w', encoding="utf-8") as of:
+                of.write(content)
+            msg = f'Snapshot saved to {fname}'
+            Win.update_statusBar(msg)
             printi(f'Snapshot saved to {fname}')
         except Exception as e:
             Win.update_statusBar('ERROR: saving {fname}: {e}')
 
     def confirm_snapshot(self, dirname, fname):
+        """Confirm snapshot file name and directory"""
         d = QW.QMessageBox(self)
         #d.setIcon(QW.QMessageBox.Information)
         d.setStandardButtons(QW.QMessageBox.Save | QW.QMessageBox.Cancel)
@@ -1310,6 +1363,7 @@ f'        self.title = "{fnamePart}"\n'
         return le.text() if ok else None
 
     def restore_snapshot(self):
+        """Restore snapshot by launching a new pp process"""
         snapshotDir = self.get_snapshotDirectory()
         #print(f'rsnap: {pargs.file}')
         #snapshotDir = ConfigDirectory+'Snapshots/'+pargs.file[:-3]#remove _pp
@@ -1322,6 +1376,7 @@ f'        self.title = "{fnamePart}"\n'
         subprocess.Popen(cmd.split())#,stdout=subprocess.PIPE)
 
     def restore_parameters(self):
+        """Restore selected parameters to their initial values from snapshot"""
         selectedParameters = self.tableWidget.selectedItems()
         printi(f'selectedPPars:{selectedParameters}')
         for item in selectedParameters:
@@ -1330,11 +1385,13 @@ f'        self.title = "{fnamePart}"\n'
         self.reload_table()
 
     def restore_allParameters(self):
+        """Restore all restorable parameters to their initial values from snapshot"""
         for row,col  in self.restorableParameters:
             self.restore_parameter(row, col)
         self.reload_table()
 
     def restore_parameter(self, row, col):
+        """Restore parameter at (row,col) to its initial value from snapshot"""
         try:
             dao,attr = Window.daTable.pos2obj[(row,col)]
             devPar = dao.devPar
@@ -1349,7 +1406,8 @@ f'        self.title = "{fnamePart}"\n'
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #``````````````````Reactor on data change`````````````````````````````````````
 def MySlot(listOfParNames):
-  """Global redirector of the SignalSourceDataReady.
+  """Slot to process data ready from DataAccessMonitor.
+  If listOfParNames is None, update all parameters.
   """
   with Process_data_Lock:
     printv(f'>MySlot received event: {listOfParNames}')
@@ -1361,7 +1419,8 @@ def MySlot(listOfParNames):
     else:
         daRowCols = [daTable.par2objAndPos[i] for i in  listOfParNames] 
     errMsg = ''
-    if dataAccessMonitor.Perf: ts = timer()
+    if dataAccessMonitor.Perf:
+        ts = timer()
     for datAccess,rowCols in daRowCols:
       for rowColSlice in rowCols:
         printv(f'dao {datAccess.name}, rowColSlice: {rowColSlice}')
@@ -1379,7 +1438,8 @@ def MySlot(listOfParNames):
             if 'R' not in datAccess.attr['features']:
                 #print(f'not readable {datAccess.name}')# cannot rely on this, many parameters are not properly marked
                 pass
-        except: pass
+        except:
+            pass
         if isinstance(datAccess,str):
             printw('logic error')
             continue
@@ -1409,7 +1469,7 @@ def MySlot(listOfParNames):
                 #except:    pass
                 tableWidget.cellWidget(*rowCol).setValue(v)
                 continue
-            elif datAccess.guiType =='bool':
+            if datAccess.guiType =='bool':
                 #printv('DAO '+datAccess.name+' is bool')
                 state = tableWidget.item(*rowCol).checkState()
                 #printv('DAO '+datAccess.name+' is bool = '+str(val)+', state:'+str(state))
@@ -1446,18 +1506,33 @@ def MySlot(listOfParNames):
             break
     if dataAccessMonitor.Perf: print('GUI update time: %.4f'%(timer()-ts))    
     #printv(f'<MySlot processed data')
-    if errMsg:  Win.update_statusBar('WRN: '+errMsg) #Issue, it could be long delay here
+    if errMsg:
+        Win.update_statusBar('WRN: '+errMsg) #Issue, it could be long delay here
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #````````````````````````````Data provider````````````````````````````````````
-class DataAccessMonitor(QtCore.QThread):
+class DataAccessMonitor(QtCore.QObject):
     """Data provider. Class attributes:
     Perf:       enables performance monitoring if True.
     SignalSourceDataReady: signal that data ready from the source.
     hostDAOs:   map of host:aggregatedDAO, the aggregatedDAO is a list of all
                 data access objects, requested from this host
+    currentDeliveryMode:  current data delivery mode.
+    ---------------
+    Methods:
+    __init__:   initializes the object.
+    setup_dataDelivery(modeTxt):  sets up data delivery mode.
+    _stop():    stops data delivery.
+    _setup_asyncDelivery():  sets up asynchronous data delivery.
+    _stop_asyncDelivery(): stops asynchronous data delivery.
+    _callback(*args, **kwargs):  callback from ADO on data ready.
+    _setup_pollingDelivery():  sets up polling data delivery.
+    _stop_pollingDelivery(): stops polling data delivery.
+    _thread_proc():  thread procedure for polling data delivery.
+    _process_data(dataDict):  process data dictionary received from ADO or EPICS.
+
+    Inheritance from QtCore.QObject is needed for qt signal/slot paradigm.
     """
     Perf = False
-    # inheritance from QtCore.QThread is needed for qt signals
     SignalSourceDataReady = QtCore.Signal(object)
     hostDAOs = {}#TODO: why not to use Window.daTable.deviceMap directly
     currentDeliveryMode = 'Stopped'
@@ -1508,7 +1583,7 @@ class DataAccessMonitor(QtCore.QThread):
         #print(f'>_setup_asyncDelivery {list(self.hostDAOs.keys())}')
         self._stop_pollingDelivery()
         #print(self.hostDAOs.items())
-        for host,daoDict in self.hostDAOs.items():
+        for _host,daoDict in self.hostDAOs.items():
             aggregatedDAO = list(daoDict.values())
             for dao in aggregatedDAO:
                 #print(f'_setup_asyncDelivery {dao}')
@@ -1524,7 +1599,7 @@ class DataAccessMonitor(QtCore.QThread):
     def _stop_asyncDelivery(self):
         # cancell all subscriptions
         #print(f'>_stop_asyncDelivery {list(self.hostDAOs.keys())}')
-        for host,daoDict in self.hostDAOs.items():
+        for _host,daoDict in self.hostDAOs.items():
             aggregatedDAO = list(daoDict.values())
             for dao in aggregatedDAO:
                 #print(f'_stop_asyncDelivery {dao}')
@@ -1540,12 +1615,14 @@ class DataAccessMonitor(QtCore.QThread):
         But EPICS - all in kwargs."""
         with Process_data_Lock:
             #printv(croppedText(f'>DataAccessMonitor.cb:{args,kwargs}'))
+            pars = None
             if len(args) > 0:# ADO way
                 pars = self._process_data(args[0])
             if len(kwargs) > 0:
                 pars = self._process_data(kwargs)
             #print(f'>DataAccessMonitor pars:{pars}')
-            self.SignalSourceDataReady.emit(pars)
+            if pars is not None:
+                self.SignalSourceDataReady.emit(pars)
         
     def _setup_pollingDelivery(self):
         # start the receiving thread
@@ -1559,7 +1636,7 @@ class DataAccessMonitor(QtCore.QThread):
         time.sleep(.1)
 
     def _thread_proc(self):
-        printi(f'>polling delivery thread ------------------------------')
+        printi('>polling delivery thread ------------------------------')
         while not EventExit.is_set() and self.pollingInterval != 0.:
             # collect data from all hosts and fill daTable with data
             dataReceived = True
@@ -1569,7 +1646,7 @@ class DataAccessMonitor(QtCore.QThread):
                 try:
                     access = aggregatedDAO[0].Access
                 except KeyError:
-                    printw(f'in _thread_proc: DAO disappeared')
+                    printw('in _thread_proc: DAO disappeared')
                     self.pollingInterval = 0.
                     break
                 #print(f'host,dao:{host,aggregatedDAO}')
@@ -1590,9 +1667,9 @@ class DataAccessMonitor(QtCore.QThread):
                 if not isinstance(r,dict):
                     printw('ERR.PP. unexpected response: '+str(r)[:80])
                     break
-                if DataAccessMonitor.Perf: print('retrieval time from %s = %.4fs'\
-                %(host,timer()-ts))
-                
+                if DataAccessMonitor.Perf:
+                    print(f'retrieval time from {host} = {timer()-ts:.4f}')
+
                 printv('>thread_proc._process_data')
                 self._process_data(r)
 
@@ -1623,7 +1700,7 @@ class DataAccessMonitor(QtCore.QThread):
                     datAccess.append(hostDevPar)
                 except KeyError as e:
                     #printv(f'The hostDevPar {e} is not for current tableWidget')
-                    return
+                    pass
 
             if isinstance(hostDevParTuple,tuple):
                 hostDevPar = ':'.join(hostDevParTuple)
@@ -1655,7 +1732,7 @@ class DataAccess():
 
     def __str__(self):
         return f'DA({self.name})'
- 
+
     def info(self):
         """Return all attributes of the DAO: value, description etc."""
         return {}
@@ -1696,15 +1773,15 @@ class DataAccess():
         #printv(croppedText(f'iv:{iv}'))
         if self.is_editable():
             #printv(croppedText(f'guitype attr:{self.name,self.attr}'))
-            if iv[0] == None:
+            if iv[0] is None:
                 self.guiType = 'button'
             elif 'legalValues' in self.attr:
                 self.guiType =  'combo'
-            elif type(iv[0]) in (float,int):
+            elif isinstance(iv[0], (int, float)):
                 self.guiType =  'spinbox' if len(iv) == 1 else 'lineEdit'
-            elif type(iv[0]) == str:
+            elif isinstance(iv[0], str):
                 self.guiType =  'lineEdit'
-            elif type(iv[0]) == bool:
+            elif isinstance(iv[0], bool):
                 self.guiType =  'bool'
         #print(f'guiType of {self.name}:{self.guiType}')
         return self.guiType
@@ -1879,7 +1956,7 @@ class DaTable():
         module = moduleFile.replace('/','.')
         if len(module) == 0:
             sys.exit(0)
-        
+
         try:
             if self._configModule is not None:
                 self._configModule = reload(self._configModule)
@@ -1912,13 +1989,13 @@ class DaTable():
 
         print('='*79)
         #print(f'file: {self.file}')
-        if True:#try:
+        try:
             rows = self.pypage.rows
-            title = self.pypage.title
-            #print(f'title: {title}')
-        else:#except:
-            printe('No entry "_Rows" in the config file')
-            sys.exit(0)
+            _title = self.pypage.title
+            #print(f'title: {_title}')
+        except:
+            printe('No rows in the PyPage')
+            sys.exit(1)
         printi(f'Imported: {self.file}')
         #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
         dead_devices = set()
@@ -1931,7 +2008,7 @@ class DaTable():
 
             try:
                 ns = self.pypage.namespace.upper()
-                di = {'LITE':DataAccess_lite, 'EPICS':DataAccess_epics,
+                pvInfo = {'LITE':DataAccess_lite, 'EPICS':DataAccess_epics,
                 'PVA':DataAccess_pva, 'ADO':DataAccess_ado}[ns]
             except Exception as e:
                 printe(f'Exception in setting namespace. {e}')
@@ -1948,7 +2025,7 @@ class DaTable():
             isdao = (isdao and edgeAreOk and ':' in key)
 
             if isdao:
-                printv(f'dao:{key}')
+                print(f'dao:{key}')
                 devPar, vslice = split_slice(key)
                 dev,par = devPar.rsplit(':',1)
                 #printv(f'dev,par,vslice: {dev,par,vslice}')
@@ -1956,9 +2033,8 @@ class DaTable():
                     txt = '?'
                     return {'obj':'?', 'attr':{'color':rgbColorCode(txt)}}
                 try:
-                    #print(f'dev, par, vslice: {dev, par, vslice}')
-                    #print(f'di: {di}')
-                    obj = di(dev, par, vslice)
+                    #print(f'pvInfo: {pvInfo}')
+                    obj = pvInfo(dev, par, vslice)
                     rdict['obj'] = obj
                     #printv(croppedText(f'ns:{obj.namespace}, obj {obj.name}:{obj}, attr:{obj.attr}'))
                 except ConnectionRefusedError:
@@ -1966,18 +2042,21 @@ class DaTable():
                     #check if whole device is in question
                     printi(f'check for dead device: {dev,par}')
                     try: #if we cannot access the device version then it is assumed dead
-                        r = di(dev, 'version')
+                        r = pvInfo(dev, 'version')
                     except:
                         dead_devices.add(dev)
                     return {'obj':'?', 'attr':{}}
                 except Exception as e:
                     # do not comment the next line or loose an exception
-                    printw(f'Could not access object {key}: {e}')
-                    try: #if we cannot access the device version then it is assumed dead
-                        r = di(dev, 'version')
-                    except:
-                        dead_devices.add(dev)
-                    return {'obj':'?', 'attr':{}}
+                    printe(f'Could not access object {key}')
+                    sys.exit(1)
+                    # try: #if we cannot access the device version then it is assumed dead
+                    #     print(f'try to get info on device version')
+                    #     r = pvInfo(dev, 'version')
+                    # except:
+                    #     print(f'no version, device assumed dead')
+                    #     dead_devices.add(dev)
+                    # return {'obj':'?', 'attr':{}}
 
                 # for table we need only obj, desc, initial and features
                 value = obj.attr.get('value')
@@ -2038,12 +2117,12 @@ class DaTable():
                     col -= 1
                     nCols -= 1
                     continue
-                
+
                 cellAttr = rowAttr.copy()
                 cellAttr.update(cdict['attr'])
                 #print(f'cellAttr:{row,col,cellAttr}')
                 self.pos2obj[(row,col)] = obj, cellAttr.copy()
-                
+
                 if issubclass(type(obj), DataAccess):
                     dev,par = obj.name.rsplit(':',1)
 
@@ -2081,7 +2160,7 @@ def build_temporary_pvfile(cnsName):
     def open_tmpFile():
         f = open(fname,'w')
         return f
-        
+
     #printi('>build_temporary_pvfile for namespace {pargs.access} CNS: {cnsName}')
     ns = pargs.access.upper()
     if ns in ['EPICS','PVA']:
@@ -2129,6 +2208,7 @@ f'        self.title = "{cnsName}"\n'
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #`````````````````````````````````````````````````````````````````````````````
 def run():
+    """Main function to run the application"""
     global Win
     sys.path.append(pargs.configDir)
 

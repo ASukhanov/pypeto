@@ -1,5 +1,9 @@
 # pypeto
-PyQt-based tabular user interface for designing and implementing control screens for EPICS (CA and PVA) and LiteServer devices.
+`pypeto` is a PyQt-based application designed for managing control screens for EPICS (Channel Access and PVAccess) and LiteServer devices. The architecture is modular, allowing for easy integration of various control pages through a tabbed interface.
+
+- **Data Flow**:
+  - The application communicates with EPICS and LiteServer devices to fetch and display process variables in real-time.
+  - Configuration files are Python scripts that define the behavior and layout of control screens.
 
 Features:
  - control of EPICS PVs and LiteServer PVs,
