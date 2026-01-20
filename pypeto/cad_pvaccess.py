@@ -59,8 +59,9 @@ def info(devPar:tuple):
         r[devPar]['desc'] = desc
         # Another way to determine PV features. Works only for bridged parameters.
         # detect if the bridged PV is writable. The description of the bridged PV have suffix: Features: xxx'
-        #features = desc.rsplit('Features: ',1)[1]
-        #r[devPar]['features'] = features\
+        features = desc.rsplit('Features: ',1)[1]
+        r[devPar]['features'] = features
+        print(f'Features {features} added to {devPar}')
     except: pass
 
     try:    # handle units
