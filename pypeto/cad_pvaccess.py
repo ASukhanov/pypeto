@@ -8,7 +8,7 @@ For example: pvaccess.get(('simScope1','NoiseAmplitude')) returns:
 To set NoiseAmplitude to 1.:
 pvaccess.set(('simScope1','NoiseAmplitude',1.))
 """
-__version__ = 'v0.1.3 2025-10-23'# handle read-only features.
+__version__ = 'v0.2.0 2026-02-25'# Detect if it is writable from the value record 'features'
 
 import time
 #from time import perf_counter as timer
@@ -36,7 +36,7 @@ def _pvname(devPar:tuple):
     return ':'.join(devPar)
 
 def info(devPar:tuple):
-    """Abridged PV info"""
+    """Return information about (device,pvname) as a dictionary"""
     pvName = _pvname(devPar)
     v = _CtxRaw.get(pvName)
     #print(f'v of {pvName}: {v.todict()}')
@@ -44,26 +44,25 @@ def info(devPar:tuple):
         'timestampSeconds': v.timeStamp.secondsPastEpoch,
         'timestampNanoSeconds': v.timeStamp.nanoseconds
         }}
+    #print(f'info of {pvName}: {r}')
 
     # Check if PV is writable
-    try:    # check if it has control field
-        control = v.control
-        #print(f'control of {devPar}: {control}')
-        r[devPar]['features'] = 'RWE'
-    except Exception as e:
-        #print(f'has no control {devPar}: {e}')
-        r[devPar]['features'] = 'R'
-
-    try:    # handle description
+    r[devPar]['features'] = ''
+    try:# First check if description contains 'Features: '
         desc = v.display.description
         r[devPar]['desc'] = desc
-        # Another way to determine PV features. Works only for bridged parameters.
-        # detect if the bridged PV is writable. The description of the bridged PV have suffix: Features: xxx'
         features = desc.rsplit('Features: ',1)[1]
         r[devPar]['features'] = features
         print(f'Features {features} added to {devPar}')
     except: pass
-
+    if r[devPar]['features'] == '':
+        #check is value has record 'features'
+        try:
+            if v.features.writable:
+                r[devPar]['features'] = 'RWE'
+                #print(f'pv {pvName} is writable')
+        except:    pass
+    
     try:    # handle units
         r[devPar]['units'] = v.display.units
     except: pass
@@ -92,7 +91,7 @@ def _cachedInfo(devPar:tuple):
         _PVInfo[devPar] = pvinfo
     return pvinfo
 
-def get(devPar:tuple, *args, **kwargs):
+def get(devPar:tuple, *_args, **_kwargs):
     """Returns devPar-keyed map of PV properties: {'value','timestamp'...}"""
     pvName = _pvname(devPar)
     v = _CtxRaw.get(pvName)
