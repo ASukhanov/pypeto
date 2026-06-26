@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Table view of process variables from EPICS and liteServer infrastructures"""
 # pylint: disable=invalid-name
-__version__= 'v1.3.2 2026-01-19'# linted, commented, error handling, button stylesheets corrected
-
+__version__= 'v1.3.3 2026-06-26'# Fixed: setting of array LDOs, fixed: lineEdit does not set value if it is a list
 #TODO: If tabs are with different namespaces, then only one gets updated 
 #TODO: embedding works on Raspberry and Lubuntu but not on RedHat
 #TODO: If connection is restored, subscribtion times out
@@ -113,6 +112,8 @@ def t2v(txt, dtype):
         #BlobType': bytes,
         'IntType': int,
         'UIntType': int,
+        'float': float,
+        'int': int,
     }
     if dtype not in numbers:
         return txt

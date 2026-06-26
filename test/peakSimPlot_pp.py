@@ -29,7 +29,7 @@ class PyPage():
         self.title = f'PeakSim@{hostPort}' if title is None else title
 
         #``````````Page attributes, optional`````````````````````````
-        self.page = {**color(240,240,240)}
+        self.page = color(240,240,240)
         #self.page['editable'] = False
 
         #``````````Definition of columns`````````````````````````````
