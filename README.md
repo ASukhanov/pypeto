@@ -9,6 +9,7 @@ Features:
  - control of EPICS PVs and LiteServer PVs,
  - tabs: several control pages can be managed from one window,
  - automatic page generation for LiteServer devices,
+ - AI-assisted page generation for EPICS PVAccess,
  - single configuration file can be used for many similar devices,
  - configuration files are python scripts,
  - snapshots: control page can be saved and selectively restored from the saved snapshots,
@@ -23,18 +24,20 @@ Features:
 
 ## Examples:
 ### Control of a simulated oscilloscope from EPICS PVAccess infrastructure:<br>
+Start server for a simulated image generator
 ```
-# Start server for a simulated ADC device 'epicsDev0'
-python -m epicsdev.epicsdev -l
-# Start control page ./test/picsdev_pp.py
-python -m pypeto -c test -f epicsdev
+python -m epicsdev.imagegen -r30
+```
+Start control page from [config/imagegen_pp.py](https://github.com/eicorg/epicsdev/blob/main/config/imagegen_pp.py):
+```
+python -m pypeto -c config -f imagegen_pp
 ```
 ### Control of a peak simulator from LiteServer infrastructure,
 for more detalis see ![tests](./test/README.md):<br>
 ```
 # Start the liteServer of a peak simulator
 python -m liteserver.device.litePeakSimulator -i localhost -p9701
-# Start control page ./test/simScope_pp.oy
+# Start control page ./test/simScope_pp.py
 python -m pypeto -c test -f peakSimPlot -e
 ```
 
@@ -45,5 +48,4 @@ python -m pypeto -c test -f peakSimPlot -e
 [link](https://epics.anl.gov/modules/soft/asyn/R4-38/asynDriver.html#testAsynPortDriverApp):<br>
 `python -m pypeto -c test -fsimScope -e`
 
-See more examples in the test directory.
 
